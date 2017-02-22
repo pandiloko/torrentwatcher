@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 
-
-
-####/usr/local/bin/bash
 mypid=$$
 
 LOGFILE="/var/log/torrentwatcher.log"
@@ -25,15 +22,12 @@ DBOX_OTHER_FOLDER="/launching-things/"
 FILEBOT="/root/filebot/filebot.sh"
 DBOX="/root/dbox/dropbox_uploader.sh"
 
-
 #setsid myscript.sh >/dev/null 2>&1 < /dev/null &
 #ps x -o  "%p %r %y %x %c "
 # kill -TERM -- -PID
 #       start-stop-daemon [option...] command
 
 export PATH="/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/root/bin"
-
-
 
 killtree() {
     local _pid=$1
@@ -170,14 +164,15 @@ process_torrent_queue (){
 # Stopped | Finished | Idle -> ensure files are copied and REMOVE FROM TRANSMISSION INCLUDING DATA
 # Seeding -> copy file and let it be until ratio is reached
 ###############################################################################
+# TODO: implement Idle timeout.  refactor including OTHER folder
     for id in `transmission-remote -l|sed -e '1d;$d;'|grep "100%"| cut -wf2| grep -Eo '[0-9]+'`
     do
         # Copy infos into properly named lowercased variables
-        set +x #comment/uncomment for a cleaner output when using xtrace option
+        [[ `echo $-` =~ .*x.* ]] && set +x && restore=yes #comment/uncomment for a cleaner output when using xtrace option
         extract_info $id
-        set -x #comment/uncomment for a cleaner output when using xtrace option
+        [[ $restore == "yes" ]] && set -x #comment/uncomment for a cleaner output when using xtrace option
 
-        if [[ "${location%/}" == "${INCOMING_MEDIA_FOLDER%/}" ]] ; then
+        if [[ "$location" -ef "$INCOMING_MEDIA_FOLDER" ]] ; then
             logger "Processing torrent with ID: $id. $state"
             case $state in
                 Stopped|Finished|Idle)
@@ -197,6 +192,8 @@ process_torrent_queue (){
                 ;;
             esac
         fi
+        # OTHER folder - remove torrent if finished, preserve disk data
+        [[ "$location" -ef "$INCOMING_OTHER_FOLDER" ]] && [[ $state == Finished]] && transmission-remote -t $id -r >> $LOGFILE 2>&1
     done
     #chmod -R 777 $MOVEDIR/*
 }
