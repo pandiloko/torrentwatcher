@@ -99,13 +99,13 @@ add_torrents (){
         oIFS=$IFS
         IFS=$'\n'
         cd $WATCH_MEDIA_FOLDER
-        for i in `$DBOX list "$DBOX_MEDIA_FOLDER" | tr -s " " | cut -d" " -f4|grep -E "\.torrent$"`; do
+        for i in `$DBOX list "$DBOX_MEDIA_FOLDER" | tr -s " " | cut -d" " -f4-|grep -E "\.torrent$"`; do
             logger "Processing file: $i"
             $DBOX download "$DBOX_MEDIA_FOLDER$i" >> $LOGFILE 2>&1 && $DBOX delete "$DBOX_MEDIA_FOLDER$i" >> $LOGFILE 2>&1
         done
 
         cd $WATCH_OTHER_FOLDER
-        for i in `$DBOX list "$DBOX_OTHER_FOLDER" | tr -s " " | cut -d" " -f4|grep -E "\.torrent$"`; do
+        for i in `$DBOX list "$DBOX_OTHER_FOLDER" | tr -s " " | cut -d" " -f4-|grep -E "\.torrent$"`; do
             logger "Processing file: $i"
             # Download but do not delete if download fails
             $DBOX download "$DBOX_OTHER_FOLDER$i" >> $LOGFILE 2>&1 && $DBOX delete "$DBOX_OTHER_FOLDER$i" >> $LOGFILE 2>&1
@@ -225,14 +225,17 @@ dropbox_monitor () {
 # Waits for changes in dropbox folders
 # Use this with dropbox_uploader
 ###############################################################################
-    pids=""
-    $DBOX monitor $DBOX_MEDIA_FOLDER 30 >> $LOGFILE 2>&1 &
-    pids="$pids $!"
-    $DBOX monitor $DBOX_OTHER_FOLDER 30 >> $LOGFILE 2>&1 &
-    pids="$pids $!"
-    for pid in $pids; do
-        wait $pid
-    done
+	while true
+	do
+	    pids=""
+	    $DBOX monitor $DBOX_MEDIA_FOLDER 30 >> $LOGFILE 2>&1 &
+	    pids="$pids $!"
+	    $DBOX monitor $DBOX_OTHER_FOLDER 30 >> $LOGFILE 2>&1 &
+	    pids="$pids $!"
+	    for pid in $pids; do
+	        wait $pid
+	    done
+	done
 }
 
 file_monitor(){
@@ -259,12 +262,11 @@ echo $mypid > $PIDFILE
 trap finish EXIT
 process_torrent_queue
 add_torrents
-
+#Execute dropbox monitor in background only if you do not have already Dropbox official monitor
+dropbox_monitor &
 while true
 do
-    #Use only one of both monitors
-    dropbox_monitor
-    #file_monitor
+    file_monitor
 
     sleep 10 # Let some time to finish eventual subsequent uploads
 
