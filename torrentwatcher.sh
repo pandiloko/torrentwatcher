@@ -9,7 +9,6 @@ PIDFILE="/var/run/torrentwatcher.pid"
 WATCH_MEDIA_FOLDER="/media/watch/"
 WATCH_OTHER_FOLDER="/media/watch_other/"
 
-
 INCOMING_MEDIA_FOLDER="/media/downloads/"
 INCOMING_OTHER_FOLDER="/media/things/"
 
@@ -193,7 +192,7 @@ process_torrent_queue (){
             esac
         fi
         # OTHER folder - remove torrent if finished, preserve disk data
-        [[ "$location" -ef "$INCOMING_OTHER_FOLDER" ]] && [[ $state == Finished]] && transmission-remote -t $id -r >> $LOGFILE 2>&1
+        [[ "$location" -ef "$INCOMING_OTHER_FOLDER" ]] && [[ $state == Finished ]] && transmission-remote -t $id -r >> $LOGFILE 2>&1
     done
     #chmod -R 777 $MOVEDIR/*
 }
