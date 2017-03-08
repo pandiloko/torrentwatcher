@@ -64,7 +64,7 @@ finish (){
     ############
     # killtree $@
     ############
-	rm -rf $CHANGESLOG
+    rm -rf $CHANGESLOG
     rm -rf $PIDFILE
     wait
 }
@@ -238,19 +238,19 @@ cloud_monitor () {
 # Downloads .torrent files ONLY, deleting from Dropbox if download is successful
 # Use this with dropbox_uploader or implement your own function for other clouds
 ###############################################################################
-	while true
-	do
-	    # Monitor folders for changes
-	    pids=""
-	    $DBOX monitor $DBOX_MEDIA_FOLDER 60 >> $LOGFILE 2>&1 &
-	    pids="$pids $!"
-	    $DBOX monitor $DBOX_OTHER_FOLDER 60 >> $LOGFILE 2>&1 &
-	    pids="$pids $!"
-	    for pid in $pids; do
-	        wait $pid
-	    done
-	    #Download files 
-	    oIFS=$IFS
+    while true
+    do
+        # Monitor folders for changes
+        pids=""
+        $DBOX monitor $DBOX_MEDIA_FOLDER 60 >> $LOGFILE 2>&1 &
+        pids="$pids $!"
+        $DBOX monitor $DBOX_OTHER_FOLDER 60 >> $LOGFILE 2>&1 &
+        pids="$pids $!"
+        for pid in $pids; do
+            wait $pid
+        done
+        #Download files 
+        oIFS=$IFS
         IFS=$'\n'
         cd $WATCH_MEDIA_FOLDER
         for i in `$DBOX list "$DBOX_MEDIA_FOLDER" | tr -s " " | cut -d " " -f4-|grep -E "\.torrent$"`; do
@@ -265,7 +265,7 @@ cloud_monitor () {
             $DBOX download "$DBOX_OTHER_FOLDER$i" >> $LOGFILE 2>&1 && $DBOX delete "$DBOX_OTHER_FOLDER$i" >> $LOGFILE 2>&1
         done
         IFS=$oIFS
-	done
+    done
 }
 
 file_monitor(){
@@ -298,8 +298,8 @@ file_monitor &
 
 while true
 do
-	inotifywait -qq -e modify,create,close_write,move_to $CHANGESLOG
-	sleep 10 # Let some time to finish eventual subsequent uploads
+    inotifywait -qq -e modify,create,close_write,move_to $CHANGESLOG
+    sleep 10 # Let some time to finish eventual subsequent uploads
     logger "Downloading torrent files to watched folder"
     process_torrent_queue
     add_torrents
