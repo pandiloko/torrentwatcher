@@ -5,7 +5,6 @@ mypid=$$
 LOGFILE="/var/log/torrentwatcher.log"
 LOGFILEBOT="/var/log/filebot.log"
 PIDFILE="/var/run/torrentwatcher.pid"
-CHANGESLOG="/tmp/torrentwatcher-changes.log"
 
 WATCH_MEDIA_FOLDER="/media/watch/"
 WATCH_OTHER_FOLDER="/media/watch_other/"
@@ -16,15 +15,15 @@ INCOMING_OTHER_FOLDER="/media/things/"
 OUTPUT_MOVIES_FOLDER="/media/film/"
 OUTPUT_TVSHOWS_FOLDER="/media/series/"
 
-DBOX_MEDIA_FOLDER="/launching-area/"
-DBOX_OTHER_FOLDER="/launching-things/"
+CLOUD_MEDIA_FOLDER="/launching-area/"
+CLOUD_OTHER_FOLDER="/launching-things/"
 
 FILEBOT="/root/filebot/filebot.sh"
 FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER{y} {n} [{rating}]/{n} - {y} - {genres} {group}"
 FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t} {group}"
 FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}"
 
-DBOX="/root/dbox/dropbox_uploader.sh"
+CLOUD_CMD="/root/dbox/dropbox_uploader.sh"
 
 #setsid myscript.sh >/dev/null 2>&1 < /dev/null &
 #exec > "$logfile" 2>&1 </dev/null
@@ -68,7 +67,6 @@ finish (){
     ############
     # killtree $@
     ############
-    rm -rf $CHANGESLOG
     rm -rf $PIDFILE
     wait
 }
@@ -182,7 +180,10 @@ process_torrent_queue (){
 # Stopped | Finished | Idle -> ensure files are copied and REMOVE FROM TRANSMISSION INCLUDING DATA
 # Seeding -> copy file and let it be until ratio is reached
 ###############################################################################
-# TODO: implement Idle timeout.
+# TODO:
+#   - implement Idle timeout.
+#   - check permissions
+
     for id in `transmission-remote -l|sed -e '1d;$d;'|grep "100%"| cut -wf2| grep -Eo '[0-9]+'`
     do
         # Copy infos into properly named lowercased variables
@@ -210,7 +211,6 @@ process_torrent_queue (){
         # OTHER folder - remove torrent if finished, preserve disk data
         [[ "$location" -ef "$INCOMING_OTHER_FOLDER" ]] && [[ $state == Finished ]] && transmission-remote -t $id -r >> $LOGFILE 2>&1
     done
-    #chmod -R 777 $MOVEDIR/*
 }
 
 check_vpn(){
@@ -238,17 +238,17 @@ check_vpn(){
 }
 
 cloud_monitor () {
-# Waits for changes in dropbox folders
-# Downloads .torrent files ONLY, deleting from Dropbox if download is successful
-# Use this with dropbox_uploader or implement your own function for other clouds
+# Waits for changes in cloud folders
+# Downloads ONLY .torrent files to watch folders, deleting from cloud if download is successful
+# Use this one for dropbox_uploader or implement your own function for other clouds
 ###############################################################################
     while true
     do
         # Monitor folders for changes
         pids=""
-        $DBOX monitor $DBOX_MEDIA_FOLDER 60 >> $LOGFILE 2>&1 &
+        $CLOUD_CMD monitor $CLOUD_MEDIA_FOLDER 60 >> $LOGFILE 2>&1 &
         pids="$pids $!"
-        $DBOX monitor $DBOX_OTHER_FOLDER 60 >> $LOGFILE 2>&1 &
+        $CLOUD_CMD monitor $CLOUD_OTHER_FOLDER 60 >> $LOGFILE 2>&1 &
         pids="$pids $!"
         for pid in $pids; do
             wait $pid
@@ -257,26 +257,24 @@ cloud_monitor () {
         oIFS=$IFS
         IFS=$'\n'
         cd $WATCH_MEDIA_FOLDER
-        for i in `$DBOX list "$DBOX_MEDIA_FOLDER" | tr -s " " | cut -d " " -f4-|grep -E "\.torrent$"`; do
+        for i in `$CLOUD_CMD list "$CLOUD_MEDIA_FOLDER" | tr -s " " | cut -d " " -f4-|grep -E "\.torrent$"`; do
             logger "Processing file: $i"
             # Download but do not delete if download fails
-            $DBOX download "$DBOX_MEDIA_FOLDER$i" >> $LOGFILE 2>&1 && $DBOX delete "$DBOX_MEDIA_FOLDER$i" >> $LOGFILE 2>&1
+            $CLOUD_CMD download "$CLOUD_MEDIA_FOLDER$i" >> $LOGFILE 2>&1 && $CLOUD_CMD delete "$CLOUD_MEDIA_FOLDER$i" >> $LOGFILE 2>&1
         done
         cd $WATCH_OTHER_FOLDER
-        for i in `$DBOX list "$DBOX_OTHER_FOLDER" | tr -s " " | cut -d" " -f4-|grep -E "\.torrent$"`; do
+        for i in `$CLOUD_CMD list "$CLOUD_OTHER_FOLDER" | tr -s " " | cut -d" " -f4-|grep -E "\.torrent$"`; do
             logger "Processing file: $i"
             # Download but do not delete if download fails
-            $DBOX download "$DBOX_OTHER_FOLDER$i" >> $LOGFILE 2>&1 && $DBOX delete "$DBOX_OTHER_FOLDER$i" >> $LOGFILE 2>&1
+            $CLOUD_CMD download "$CLOUD_OTHER_FOLDER$i" >> $LOGFILE 2>&1 && $CLOUD_CMD delete "$CLOUD_OTHER_FOLDER$i" >> $LOGFILE 2>&1
         done
         IFS=$oIFS
     done
 }
 
 file_monitor(){
-# Waits for changes in dropbox folders
-# Use this if you have dropbox daemon installed and running
+# Waits for changes in watch folders
 ###############################################################################
-    # inotifywait -m -o $CHANGESLOG -e close_write,moved_to,modify $WATCH_MEDIA_FOLDER $WATCH_OTHER_FOLDER
     inotifywait -q -t 120 -e close_write,moved_to,modify $WATCH_MEDIA_FOLDER $WATCH_OTHER_FOLDER
 }
 logtail(){
@@ -332,7 +330,8 @@ echo $mypid > $PIDFILE
 trap finish EXIT
 process_torrent_queue
 add_torrents
-#Execute dropbox monitor in background only if you do not have already Dropbox official monitor
+
+#cloud_monitor only needed if there isn't any other cloud monitor service installed and running
 cloud_monitor &
 
 logger "Entering loop..."
