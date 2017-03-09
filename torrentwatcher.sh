@@ -117,14 +117,14 @@ add_torrents (){
         shopt -s nocaseglob #Just in case, ignore case :)
         
         transmission-remote -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1
-        for i in `ls -1 $WATCH_MEDIA_FOLDER/*.torrent`; do
+        for i in `ls -1 ${WATCH_MEDIA_FOLDER}*.torrent 2>/dev/null`; do
             logger "Processing file: $i"
             transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1
             mv $i $i.added
         done
         
         transmission-remote -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1
-        for i in `ls -1 $WATCH_OTHER_FOLDER/*.torrent`; do
+        for i in `ls -1 ${WATCH_OTHER_FOLDER}*.torrent 2>/dev/null`; do
             logger "Processing file: $i"
             transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1
             mv $i $i.added
@@ -272,9 +272,30 @@ file_monitor(){
 # Waits for changes in dropbox folders
 # Use this if you have dropbox daemon installed and running
 ###############################################################################
-    inotifywait -m -o $CHANGESLOG -e close_write,move_to $WATCH_MEDIA_FOLDER $WATCH_OTHER_FOLDER
+    inotifywait -m -o $CHANGESLOG -e close_write,moved_to $WATCH_MEDIA_FOLDER $WATCH_OTHER_FOLDER
 }
+logtail(){
+file=$1
+offset=0
+readed=0
+if [ -e $file.offset ] ;then 
+        offset=`cat $file.offset`
+fi
+        #while read -r line;do 
+        #       ((readed+=1))
+        #       echo $line $readed
+        #done < <(tail -n +$offset $file)
+	# A for loop to read a file is an antipattern but
+	# we must use it due to a bug in FreeBSD
+        for i in `tail -n +$offset $file`;do
+                ((readed+=1))
+                echo $i
+        done
 
+        offset=$((offset+readed))
+        echo $offset > $file.offset
+
+}
 ################################
 # EXECUTION STARTS HERE
 ###############################
@@ -296,9 +317,10 @@ add_torrents
 cloud_monitor &
 file_monitor &
 
+logger "Entering loop..."
 while true
 do
-    inotifywait -qq -e modify,create,close_write,move_to $CHANGESLOG
+    inotifywait -qq -e modify,create,close_write,moved_to $CHANGESLOG
     sleep 10 # Let some time to finish eventual subsequent uploads
     logger "Downloading torrent files to watched folder"
     process_torrent_queue
