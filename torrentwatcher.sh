@@ -20,6 +20,10 @@ DBOX_MEDIA_FOLDER="/launching-area/"
 DBOX_OTHER_FOLDER="/launching-things/"
 
 FILEBOT="/root/filebot/filebot.sh"
+FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER{y} {n} [{rating}]/{n} - {y} - {genres} {group}"
+FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t} {group}"
+FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDERseries{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}"
+
 DBOX="/root/dbox/dropbox_uploader.sh"
 
 #setsid myscript.sh >/dev/null 2>&1 < /dev/null &
@@ -134,7 +138,7 @@ add_torrents (){
         IFS=$oIFS
 }
 filebot_command(){
-    $FILEBOT -script fn:amc -non-strict --def movieFormat="/media/film/{y} {n} [{rating}]/{n} - {y} - {genres}" seriesFormat="/media/series/{n}/{fn}" animeFormat="/media/series/{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}" music=n excludeList=/var/log/amc-exclude.txt subtitles=en --log-file /var/log/amc.log --conflict auto  --log all --action $1 "$2" >> $LOGFILE 2>&1
+    $FILEBOT -script fn:amc -non-strict --def movieFormat=$FILEBOT_MOVIES_FORMAT seriesFormat=$FILEBOT_SERIES_FORMAT animeFormat=$FILEBOT_ANIME_FORMAT music=n excludeList=/var/log/amc-exclude.txt subtitles=en --log-file /var/log/amc.log --conflict auto  --log all --action $1 "$2" >> $LOGFILE 2>&1
     return $?
 }
 filebot_process (){
@@ -272,7 +276,8 @@ file_monitor(){
 # Waits for changes in dropbox folders
 # Use this if you have dropbox daemon installed and running
 ###############################################################################
-    inotifywait -m -o $CHANGESLOG -e close_write,moved_to $WATCH_MEDIA_FOLDER $WATCH_OTHER_FOLDER
+    # inotifywait -m -o $CHANGESLOG -e close_write,moved_to,modify $WATCH_MEDIA_FOLDER $WATCH_OTHER_FOLDER
+    inotifywait -q -t 120 -e close_write,moved_to,modify $WATCH_MEDIA_FOLDER $WATCH_OTHER_FOLDER
 }
 logtail(){
 # Parameters
@@ -329,12 +334,11 @@ process_torrent_queue
 add_torrents
 #Execute dropbox monitor in background only if you do not have already Dropbox official monitor
 cloud_monitor &
-file_monitor &
 
 logger "Entering loop..."
 while true
 do
-    inotifywait -qq -e modify,create,close_write,moved_to $CHANGESLOG
+    file_monitor
     sleep 10 # Let some time to finish eventual subsequent uploads
     logger "Downloading torrent files to watched folder"
     process_torrent_queue
