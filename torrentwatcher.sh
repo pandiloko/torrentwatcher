@@ -5,6 +5,7 @@ mypid=$$
 LOGFILE="/var/log/torrentwatcher.log"
 LOGFILEBOT="/var/log/filebot.log"
 PIDFILE="/var/run/torrentwatcher.pid"
+CHANGESLOG="/tmp/torrentwatcher-changes.log"
 
 WATCH_MEDIA_FOLDER="/media/watch/"
 WATCH_OTHER_FOLDER="/media/watch_other/"
@@ -19,12 +20,29 @@ DBOX_MEDIA_FOLDER="/launching-area/"
 DBOX_OTHER_FOLDER="/launching-things/"
 
 FILEBOT="/root/filebot/filebot.sh"
+FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER{y} {n} [{rating}]/{n} - {y} - {genres} {group}"
+FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t} {group}"
+FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDERseries{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}"
+
 DBOX="/root/dbox/dropbox_uploader.sh"
 
 #setsid myscript.sh >/dev/null 2>&1 < /dev/null &
+#exec > "$logfile" 2>&1 </dev/null
 #ps x -o  "%p %r %y %x %c "
 # kill -TERM -- -PID
 #       start-stop-daemon [option...] command
+
+
+# tail -fn0 logfile | \
+# while read line ; do
+#         echo "$line" | grep "pattern"
+#         if [ $? = 0 ]
+#         then
+#                 ... do something ...
+#         fi
+# done
+
+# tail -fn0 logfile | awk '/pattern/ { print | "command" }'
 
 export PATH="/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/root/bin"
 
@@ -50,7 +68,7 @@ finish (){
     ############
     # killtree $@
     ############
-
+    rm -rf $CHANGESLOG
     rm -rf $PIDFILE
     wait
 }
@@ -72,6 +90,7 @@ extract_info () {
 # extract info from torrent and create GLOBAL variables accordingly
 # variable names are lowercased and spaces replaced with underscores
 ###############################################################################
+    [[ `echo $-` =~ .*x.* ]] && set +x && restore=yes #comment/uncomment for a cleaner output when using xtrace option
     oIFS=$IFS
     IFS=$'\n'
     for i in `transmission-remote -t $1 -i| grep ":"` ;do
@@ -93,33 +112,33 @@ extract_info () {
         declare -g $key=$value
     done
     IFS=$oIFS
+    [[ $restore == "yes" ]] && set -x #comment/uncomment for a cleaner output when using xtrace option
 }
 
 add_torrents (){
         oIFS=$IFS
         IFS=$'\n'
-        cd $WATCH_MEDIA_FOLDER
-        for i in `$DBOX list "$DBOX_MEDIA_FOLDER" | tr -s " " | cut -d" " -f4|grep -E "\.torrent$"`; do
-            logger "Processing file: $i"
-            $DBOX download "$DBOX_MEDIA_FOLDER$i" >> $LOGFILE 2>&1 && $DBOX delete "$DBOX_MEDIA_FOLDER$i" >> $LOGFILE 2>&1
-        done
+        shopt -s nocaseglob #Just in case, ignore case :)
 
-        cd $WATCH_OTHER_FOLDER
-        for i in `$DBOX list "$DBOX_OTHER_FOLDER" | tr -s " " | cut -d" " -f4|grep -E "\.torrent$"`; do
+        transmission-remote -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1
+        for i in `ls -1 ${WATCH_MEDIA_FOLDER}*.torrent 2>/dev/null`; do
             logger "Processing file: $i"
-            # Download but do not delete if download fails
-            $DBOX download "$DBOX_OTHER_FOLDER$i" >> $LOGFILE 2>&1 && $DBOX delete "$DBOX_OTHER_FOLDER$i" >> $LOGFILE 2>&1
             transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1
             mv $i $i.added
         done
-        IFS=$oIFS
-        # This one last command should not be necessary.
-        # Documention says that "transmission-remote -a <torrent/url> -w <folder>" changes the folder only for the added torrent BUT in my experience it changes (sometimes?) the default download folder
-        # TODO: NEEDS MORE TESTING
+
         transmission-remote -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1
+        for i in `ls -1 ${WATCH_OTHER_FOLDER}*.torrent 2>/dev/null`; do
+            logger "Processing file: $i"
+            transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1
+            mv $i $i.added
+        done
+
+        shopt -u nocaseglob
+        IFS=$oIFS
 }
 filebot_command(){
-    $FILEBOT -script fn:amc -non-strict --def movieFormat="/media/film/{y} {n} [{rating}]/{n} - {y} - {genres}" seriesFormat="/media/series/{n}/{fn}" animeFormat="/media/series/{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}" music=n excludeList=/var/log/amc-exclude.txt subtitles=en --log-file /var/log/amc.log --conflict auto  --log all --action $1 "$2" >> $LOGFILE 2>&1
+    $FILEBOT -script fn:amc -non-strict --def movieFormat=$FILEBOT_MOVIES_FORMAT seriesFormat=$FILEBOT_SERIES_FORMAT animeFormat=$FILEBOT_ANIME_FORMAT music=n excludeList=/var/log/amc-exclude.txt subtitles=en --log-file /var/log/amc.log --conflict auto  --log all --action $1 "$2" >> $LOGFILE 2>&1
     return $?
 }
 filebot_process (){
@@ -163,14 +182,11 @@ process_torrent_queue (){
 # Stopped | Finished | Idle -> ensure files are copied and REMOVE FROM TRANSMISSION INCLUDING DATA
 # Seeding -> copy file and let it be until ratio is reached
 ###############################################################################
-# TODO: implement Idle timeout.  refactor including OTHER folder
+# TODO: implement Idle timeout.
     for id in `transmission-remote -l|sed -e '1d;$d;'|grep "100%"| cut -wf2| grep -Eo '[0-9]+'`
     do
         # Copy infos into properly named lowercased variables
-        [[ `echo $-` =~ .*x.* ]] && set +x && restore=yes #comment/uncomment for a cleaner output when using xtrace option
         extract_info $id
-        [[ $restore == "yes" ]] && set -x #comment/uncomment for a cleaner output when using xtrace option
-
         if [[ "$location" -ef "$INCOMING_MEDIA_FOLDER" ]] ; then
             logger "Processing torrent with ID: $id. $state"
             case $state in
@@ -221,17 +237,38 @@ check_vpn(){
     fi
 }
 
-dropbox_monitor () {
+cloud_monitor () {
 # Waits for changes in dropbox folders
-# Use this with dropbox_uploader
+# Downloads .torrent files ONLY, deleting from Dropbox if download is successful
+# Use this with dropbox_uploader or implement your own function for other clouds
 ###############################################################################
-    pids=""
-    $DBOX monitor $DBOX_MEDIA_FOLDER 30 >> $LOGFILE 2>&1 &
-    pids="$pids $!"
-    $DBOX monitor $DBOX_OTHER_FOLDER 30 >> $LOGFILE 2>&1 &
-    pids="$pids $!"
-    for pid in $pids; do
-        wait $pid
+    while true
+    do
+        # Monitor folders for changes
+        pids=""
+        $DBOX monitor $DBOX_MEDIA_FOLDER 60 >> $LOGFILE 2>&1 &
+        pids="$pids $!"
+        $DBOX monitor $DBOX_OTHER_FOLDER 60 >> $LOGFILE 2>&1 &
+        pids="$pids $!"
+        for pid in $pids; do
+            wait $pid
+        done
+        #Download files
+        oIFS=$IFS
+        IFS=$'\n'
+        cd $WATCH_MEDIA_FOLDER
+        for i in `$DBOX list "$DBOX_MEDIA_FOLDER" | tr -s " " | cut -d " " -f4-|grep -E "\.torrent$"`; do
+            logger "Processing file: $i"
+            # Download but do not delete if download fails
+            $DBOX download "$DBOX_MEDIA_FOLDER$i" >> $LOGFILE 2>&1 && $DBOX delete "$DBOX_MEDIA_FOLDER$i" >> $LOGFILE 2>&1
+        done
+        cd $WATCH_OTHER_FOLDER
+        for i in `$DBOX list "$DBOX_OTHER_FOLDER" | tr -s " " | cut -d" " -f4-|grep -E "\.torrent$"`; do
+            logger "Processing file: $i"
+            # Download but do not delete if download fails
+            $DBOX download "$DBOX_OTHER_FOLDER$i" >> $LOGFILE 2>&1 && $DBOX delete "$DBOX_OTHER_FOLDER$i" >> $LOGFILE 2>&1
+        done
+        IFS=$oIFS
     done
 }
 
@@ -239,7 +276,43 @@ file_monitor(){
 # Waits for changes in dropbox folders
 # Use this if you have dropbox daemon installed and running
 ###############################################################################
-    inotifywait -qqr -e close_write,move,delete,create $DBOX_MEDIA_FOLDER $DBOX_OTHER_FOLDER
+    # inotifywait -m -o $CHANGESLOG -e close_write,moved_to,modify $WATCH_MEDIA_FOLDER $WATCH_OTHER_FOLDER
+    inotifywait -q -t 120 -e close_write,moved_to,modify $WATCH_MEDIA_FOLDER $WATCH_OTHER_FOLDER
+}
+logtail(){
+# Parameters
+#   - file to be readed or resume reading
+# Just reads a file and saves readed lines in an .offset file.
+# The next time resumes reading after offset
+###############################################################################
+    file=$1
+    offset=1 #Because tail -n +offset begins ON offset line (not after) i. e. tail -n +0 == tail -n +1
+    readed=0
+
+    #file exists, is regular file and is not zero size. Else return
+    ([ -e $file ] && [  -f $file ] && [ -s $file ]) || return 1
+
+    if [ -e $file.offset ] ;then
+        offset=`cat $file.offset`
+    fi
+
+    total_lines=`wc -l < $file`
+    if [ $offset -gt $((total_lines+1)) ]; then
+        rm -f $file.offset
+        offset=1
+    fi
+    #while read -r line;do
+    #    ((readed+=1))
+    #    echo $line
+    #done < <(tail -n +$offset $file)
+    # A for loop to read a file is an antipattern but
+    # we must use it due to a bug in FreeBSD
+    for i in `tail -n +$offset $file`;do
+        ((readed+=1))
+        echo $i
+    done
+    offset=$((offset+readed))
+    echo $offset > $file.offset
 }
 
 ################################
@@ -259,15 +332,14 @@ echo $mypid > $PIDFILE
 trap finish EXIT
 process_torrent_queue
 add_torrents
+#Execute dropbox monitor in background only if you do not have already Dropbox official monitor
+cloud_monitor &
 
+logger "Entering loop..."
 while true
 do
-    #Use only one of both monitors
-    dropbox_monitor
-    #file_monitor
-
+    file_monitor
     sleep 10 # Let some time to finish eventual subsequent uploads
-
     logger "Downloading torrent files to watched folder"
     process_torrent_queue
     add_torrents
