@@ -36,7 +36,7 @@ This is how the data flows:
 There is no installation. Just run it!! ... I'm kidding, of course there is no installation as this is a bash script, but there are some (many) requirements. 
 ### Requirements
 Install following packages:
-
+ - bash version 4.2+
  - transmission
  - openvpn
  - geoip
