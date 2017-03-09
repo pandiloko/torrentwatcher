@@ -22,7 +22,7 @@ DBOX_OTHER_FOLDER="/launching-things/"
 FILEBOT="/root/filebot/filebot.sh"
 FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER{y} {n} [{rating}]/{n} - {y} - {genres} {group}"
 FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t} {group}"
-FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDERseries{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}"
+FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}"
 
 DBOX="/root/dbox/dropbox_uploader.sh"
 
