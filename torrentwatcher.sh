@@ -115,21 +115,21 @@ add_torrents (){
         oIFS=$IFS
         IFS=$'\n'
         shopt -s nocaseglob #Just in case, ignore case :)
-        
+
         transmission-remote -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1
         for i in `ls -1 ${WATCH_MEDIA_FOLDER}*.torrent 2>/dev/null`; do
             logger "Processing file: $i"
             transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1
             mv $i $i.added
         done
-        
+
         transmission-remote -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1
         for i in `ls -1 ${WATCH_OTHER_FOLDER}*.torrent 2>/dev/null`; do
             logger "Processing file: $i"
             transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1
             mv $i $i.added
         done
-        
+
         shopt -u nocaseglob
         IFS=$oIFS
 }
@@ -249,7 +249,7 @@ cloud_monitor () {
         for pid in $pids; do
             wait $pid
         done
-        #Download files 
+        #Download files
         oIFS=$IFS
         IFS=$'\n'
         cd $WATCH_MEDIA_FOLDER
@@ -275,27 +275,41 @@ file_monitor(){
     inotifywait -m -o $CHANGESLOG -e close_write,moved_to $WATCH_MEDIA_FOLDER $WATCH_OTHER_FOLDER
 }
 logtail(){
-file=$1
-offset=0
-readed=0
-if [ -e $file.offset ] ;then 
+# Parameters
+#   - file to be readed or resume reading
+# Just reads a file and saves readed lines in an .offset file.
+# The next time resumes reading after offset
+###############################################################################
+    file=$1
+    offset=1 #Because tail -n +offset begins ON offset line (not after) i. e. tail -n +0 == tail -n +1
+    readed=0
+
+    #file exists, is regular file and is not zero size. Else return
+    ([ -e $file ] && [  -f $file ] && [ -s $file ]) || return 1
+
+    if [ -e $file.offset ] ;then
         offset=`cat $file.offset`
-fi
-        #while read -r line;do 
-        #       ((readed+=1))
-        #       echo $line $readed
-        #done < <(tail -n +$offset $file)
-	# A for loop to read a file is an antipattern but
-	# we must use it due to a bug in FreeBSD
-        for i in `tail -n +$offset $file`;do
-                ((readed+=1))
-                echo $i
-        done
+    fi
 
-        offset=$((offset+readed))
-        echo $offset > $file.offset
-
+    total_lines=`wc -l < $file`
+    if [ $offset -gt $((total_lines+1)) ]; then
+        rm -f $file.offset
+        offset=1
+    fi
+    #while read -r line;do
+    #    ((readed+=1))
+    #    echo $line
+    #done < <(tail -n +$offset $file)
+    # A for loop to read a file is an antipattern but
+    # we must use it due to a bug in FreeBSD
+    for i in `tail -n +$offset $file`;do
+        ((readed+=1))
+        echo $i
+    done
+    offset=$((offset+readed))
+    echo $offset > $file.offset
 }
+
 ################################
 # EXECUTION STARTS HERE
 ###############################
