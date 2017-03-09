@@ -121,17 +121,14 @@ add_torrents (){
         transmission-remote -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1
         for i in `ls -1 ${WATCH_MEDIA_FOLDER}*.torrent 2>/dev/null`; do
             logger "Processing file: $i"
-            transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1
+            transmission-remote -a "$i" -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1
             mv $i $i.added
         done
-
-        transmission-remote -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1
         for i in `ls -1 ${WATCH_OTHER_FOLDER}*.torrent 2>/dev/null`; do
             logger "Processing file: $i"
             transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1
             mv $i $i.added
         done
-
         shopt -u nocaseglob
         IFS=$oIFS
 }
