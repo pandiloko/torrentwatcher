@@ -22,7 +22,7 @@ DBOX_OTHER_FOLDER="/launching-things/"
 FILEBOT="/root/filebot/filebot.sh"
 FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER{y} {n} [{rating}]/{n} - {y} - {genres} {group}"
 FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t} {group}"
-FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDERseries{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}"
+FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}"
 
 DBOX="/root/dbox/dropbox_uploader.sh"
 
@@ -138,7 +138,7 @@ add_torrents (){
         IFS=$oIFS
 }
 filebot_command(){
-    $FILEBOT -script fn:amc -non-strict --def movieFormat=$FILEBOT_MOVIES_FORMAT seriesFormat=$FILEBOT_SERIES_FORMAT animeFormat=$FILEBOT_ANIME_FORMAT music=n excludeList=/var/log/amc-exclude.txt subtitles=en --log-file /var/log/amc.log --conflict auto  --log all --action $1 "$2" >> $LOGFILE 2>&1
+    $FILEBOT -script fn:amc -non-strict --def movieFormat="$FILEBOT_MOVIES_FORMAT" seriesFormat="$FILEBOT_SERIES_FORMAT" animeFormat="$FILEBOT_ANIME_FORMAT" music=n excludeList=/var/log/amc-exclude.txt subtitles=en --log-file /var/log/amc.log --conflict auto  --log all --action $1 "$2" >> $LOGFILE 2>&1
     return $?
 }
 filebot_process (){
@@ -153,7 +153,7 @@ filebot_process (){
 ###############################################################################
 
     # Pick any of the files and obtain the main folder
-    folder="`transmission-remote -t $2 -f | tail -n1 | cut -d ' ' -f13- | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`"
+    folder="`transmission-remote -t $2 -f | tail -n1 | sed -E 's/.*[0-9.]+ [kgmbKGMB]+[ ]+//' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`"
     # Go up in directory tree until getting "."
 
     parent=`dirname "$folder"`
