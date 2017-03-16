@@ -1,29 +1,154 @@
 #!/usr/bin/env bash
 
 mypid=$$
+OPTS=`getopt -o vhf --long file:,log:,log-filebot:,watch:,watch-other:,incoming:,incoming-other:,output-movies:,output-tvshows:,cloud:,cloud-other:,filebot-cmd:,cloud-cmd:,verbose,help,version -n 'parse-options' -- "$@"`
 
-LOGFILE="/var/log/torrentwatcher.log"
-LOGFILEBOT="/var/log/filebot.log"
-PIDFILE="/var/run/torrentwatcher.pid"
+__dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+__file="${__dir}/$(basename "${BASH_SOURCE[0]}")"
+__base="$(basename ${__file} .sh)"
+__root="$(cd "$(dirname "${__dir}")" && pwd)"
 
-WATCH_MEDIA_FOLDER="/media/watch/"
-WATCH_OTHER_FOLDER="/media/watch_other/"
 
-INCOMING_MEDIA_FOLDER="/media/downloads/"
-INCOMING_OTHER_FOLDER="/media/things/"
+LOGFILE="$__dir/var/log/torrentwatcher.log"
+LOGFILEBOT="$__dir/var/log/filebot.log"
+PIDFILE="$__dir/var/run/torrentwatcher.pid"
 
-OUTPUT_MOVIES_FOLDER="/media/film/"
-OUTPUT_TVSHOWS_FOLDER="/media/series/"
+WATCH_MEDIA_FOLDER="$__dir/watch/media/"
+WATCH_OTHER_FOLDER="$__dir/watch/other/"
 
-CLOUD_MEDIA_FOLDER="/launching-area/"
-CLOUD_OTHER_FOLDER="/launching-things/"
+INCOMING_MEDIA_FOLDER="$__dir/media/"
+INCOMING_OTHER_FOLDER="$__dir/other/"
 
-FILEBOT="/root/filebot/filebot.sh"
+OUTPUT_MOVIES_FOLDER="$__dir/archive/movies/"
+OUTPUT_TVSHOWS_FOLDER="$__dir/archive/tvshows/"
+
+CLOUD_MEDIA_FOLDER="/launching-media/"
+CLOUD_OTHER_FOLDER="/launching-other/"
+
+FILEBOT=`type -p filebot` || FILEBOT="/opt/filebot/filebot.sh"
 FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER{y} {n} [{rating}]/{n} - {y} - {genres} {group}"
 FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t} {group}"
 FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}"
 
-CLOUD_CMD="/root/dbox/dropbox_uploader.sh"
+CLOUD_CMD="/opt/dbox/dropbox_uploader.sh"
+
+export PATH="/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/root/bin"
+
+VERSION="1.0-Togusa"
+LICENSE="
+Copyright (C) `date '+%Y'` Licensed under GPLv3
+torrentwatcher comes with ABSOLUTELY NO WARRANTY.  This is free software, and you
+are welcome to redistribute it under certain conditions.  See the GNU
+General Public License Version 3 for details.
+"
+
+help (){
+    printf %s "\
+torrentwatcher version $VERSION
+
+$LICENSE
+
+torrentwatcher is simple yet functional script to help in th automation of torrent download and classification
+
+Usage: torrentwatcher [OPTIONS]
+
+Options
+     --log FILE              location for the main log file
+     --log-filebot FILE      location for the filebot operations log file
+     --incoming PATH         path for the downloaded movies and tv shows
+     --incoming-other PATH   path for the other downloaded stuff
+     --output-movies PATH    final destination path for classified movies
+     --output-tvshows PATH   final destination path for classified tv shows
+     --cloud PATH            absolute path for movies and tv shows incoming torrent files in the cloud storage
+     --cloud-other PATH      absolute path for other stuff incoming torrent files in the cloud storage
+ -f, --file FILE             read configurations from specified file (bash syntax)
+ -v, --verbose               increase verbosity
+     --version               show version and exit
+ -h, --help                  show this help message
+
+"
+}
+
+version(){
+        printf %s "\
+torrentwatcher version $VERSION
+"
+}
+
+unknow_syntax() {
+    version
+    printf %s "\
+Unknown option or incorrect syntax. Try ussing -h,--help option
+"
+}
+
+readconfig(){
+    ( [ -e $CONFIG_FILE ] && [ -f $CONFIG_FILE ] && [ -s $CONFIG_FILE ] ) || exit 1
+    tmpfile=$(mktemp /tmp/torrentwatcher.XXXXXX)
+    grep -Ei '^[ ]*[a-z]+=[^[;,`()%$!#]+[ ]*$' $CONFIG_FILE > $tmpfile
+    echo "Readed options from file $tmpfile:"
+    cat $tmpfile
+
+    while true; do
+        read -p "Do you want to continue? [Y] / n" yn
+        case $yn in
+            [Yy] ) break;;
+            [Nn] ) exit 1;;
+            * ) echo "Please answer with y or n.";;
+        esac
+    done
+    rm -f $tmpfile
+}
+
+readopts(){
+
+    if [ $? != 0 ] ; then echo "Failed parsing options." >&2 ; exit 1 ; fi
+
+    echo "$OPTS"
+    eval set -- "$OPTS"
+
+    while true; do
+      case "$1" in
+        -v | --verbose ) VERBOSE=true; shift ;;
+        -h | --help )    help; shift ;;
+        -f | --file )
+            CONFIG_FILE=$2
+            readconfig
+            break
+            ;;
+        --log) LOGFILE="$2"; shift 2 ;;
+        --log-filebot) LOGFILEBOT="$2"; shift 2 ;;
+        --watch) WATCH_MEDIA_FOLDER="$2"; shift 2 ;;
+        --watch-other) WATCH_OTHER_FOLDER="$2"; shift 2 ;;
+        --incoming-other) INCOMING_OTHER_FOLDER="$2"; shift 2 ;;
+        --incoming) INCOMING_MEDIA_FOLDER="$2"; shift 2 ;;
+        --output-movies) OUTPUT_MOVIES_FOLDER="$2"; shift 2 ;;
+        --output-tvshows) OUTPUT_MOVIES_FOLDER="$2"; shift 2 ;;
+        --cloud) CLOUD_MEDIA_FOLDER="$2"; shift 2 ;;
+        --cloud-other) CLOUD_OTHER_FOLDER="$2"; shift 2 ;;
+        --filebot-cmd) FILEBOT_CMD="$2"; shift 2 ;;
+        --cloud-cmd) CLOUD_CMD="$2"; shift 2 ;;
+        -- ) shift; break ;;
+        * ) break ;;
+      esac
+    done
+}
+
+
+create_folders(){
+    mkdir -p `dirname "$LOGFILE"` || exit 1
+    mkdir -p `dirname "$LOGFILEBOT"` || exit 1
+    mkdir -p `dirname "$LOGFILE"` || exit 1
+    mkdir -p $INCOMING_MEDIA_FOLDER || exit 1
+    mkdir -p $INCOMING_OTHER_FOLDER || exit 1
+    mkdir -p $INCOMING_MEDIA_FOLDER || exit 1
+    mkdir -p $OUTPUT_MOVIES_FOLDER || exit 1
+    mkdir -p $OUTPUT_TVSHOWS_FOLDER || exit 1
+    mkdir -p $WATCH_MEDIA_FOLDER || exit 1
+    mkdir -p $WATCH_OTHER_FOLDER || exit 1
+    [ -x "$FILEBOT" ] || exit 1
+    [ -x "$CLOUD_CMD" ] || exit 1
+}
 
 #setsid myscript.sh >/dev/null 2>&1 < /dev/null &
 #exec > "$logfile" 2>&1 </dev/null
@@ -43,7 +168,6 @@ CLOUD_CMD="/root/dbox/dropbox_uploader.sh"
 
 # tail -fn0 logfile | awk '/pattern/ { print | "command" }'
 
-export PATH="/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/root/bin"
 
 killtree() {
     local _pid=$1
@@ -114,23 +238,19 @@ extract_info () {
 }
 
 add_torrents (){
-        oIFS=$IFS
-        IFS=$'\n'
-        shopt -s nocaseglob #Just in case, ignore case :)
 
         transmission-remote -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1
-        for i in `ls -1 ${WATCH_MEDIA_FOLDER}*.torrent 2>/dev/null`; do
+        for i in ${WATCH_MEDIA_FOLDER}*.torrent ; do
             logger "Processing file: $i"
             transmission-remote -a "$i" -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1
-            mv $i $i.added
+            mv "$i" "$i.added"
         done
-        for i in `ls -1 ${WATCH_OTHER_FOLDER}*.torrent 2>/dev/null`; do
+        for i in ${WATCH_OTHER_FOLDER}*.torrent ; do
             logger "Processing file: $i"
             transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1
-            mv $i $i.added
+            mv "$i" "$i.added"
         done
-        shopt -u nocaseglob
-        IFS=$oIFS
+
 }
 filebot_command(){
     $FILEBOT -script fn:amc -non-strict --def movieFormat="$FILEBOT_MOVIES_FORMAT" seriesFormat="$FILEBOT_SERIES_FORMAT" animeFormat="$FILEBOT_ANIME_FORMAT" music=n excludeList=/var/log/amc-exclude.txt subtitles=en --log-file /var/log/amc.log --conflict auto  --log all --action $1 "$2" >> $LOGFILE 2>&1
@@ -314,6 +434,14 @@ logtail(){
 # EXECUTION STARTS HERE
 ###############################
 
+readopts
+
+create_folders
+set
+env
+
+exit 0
+
 if ls $PIDFILE &>/dev/null; then
     if ps aux | grep `cat $PIDFILE` &>/dev/null ;then
         logger "TorrenWatcher is already running (`cat $PIDFILE`)"
@@ -322,9 +450,15 @@ if ls $PIDFILE &>/dev/null; then
     logger "There was a PID file but no corresponding process was running. "
 fi
 
-logger "Starting TorrentWatcher..."
+
 echo $mypid > $PIDFILE
 trap finish EXIT
+
+
+
+logger "Starting TorrentWatcher..."
+
+
 process_torrent_queue
 add_torrents
 
