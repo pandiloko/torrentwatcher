@@ -38,7 +38,7 @@ OUTPUT_TVSHOWS_FOLDER="$__dir/archive/tvshows/"
 CLOUD_MEDIA_FOLDER="/launching-media/"
 CLOUD_OTHER_FOLDER="/launching-other/"
 
-FILEBOT=`type -p filebot` || FILEBOT="/opt/filebot/filebot.sh"
+FILEBOT_CMD=`type -p filebot` || FILEBOT_CMD="/opt/filebot/filebot.sh"
 FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER{y} {n} [{rating}]/{n} - {y} - {genres} {group}"
 FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t} {group}"
 FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}"
@@ -121,12 +121,13 @@ readopts(){
     while true; do
       case "$1" in
         -v | --verbose ) VERBOSE=true; shift ;;
-        -h | --help )    help; shift ;;
+        -h | --help ) help; exit 0 ;;
         -f | --file )
             CONFIG_FILE=$2
             readconfig
             break
             ;;
+        --version) version; exit 0;;
         --log) LOGFILE="$2"; shift 2 ;;
         --log-filebot) LOGFILEBOT="$2"; shift 2 ;;
         --watch) WATCH_MEDIA_FOLDER="$2"; shift 2 ;;
@@ -139,7 +140,6 @@ readopts(){
         --cloud-other) CLOUD_OTHER_FOLDER="$2"; shift 2 ;;
         --filebot-cmd) FILEBOT_CMD="$2"; shift 2 ;;
         --cloud-cmd) CLOUD_CMD="$2"; shift 2 ;;
-        --version) version exit;;
         -- ) shift; break ;;
         * ) break ;;
       esac
@@ -148,18 +148,53 @@ readopts(){
 
 
 check_environment(){
-    mkdir -p `dirname "$LOGFILE"` || exit 1
-    mkdir -p `dirname "$LOGFILEBOT"` || exit 1
-    mkdir -p `dirname "$LOGFILE"` || exit 1
-    mkdir -p $INCOMING_MEDIA_FOLDER || exit 1
-    mkdir -p $INCOMING_OTHER_FOLDER || exit 1
-    mkdir -p $INCOMING_MEDIA_FOLDER || exit 1
-    mkdir -p $OUTPUT_MOVIES_FOLDER || exit 1
-    mkdir -p $OUTPUT_TVSHOWS_FOLDER || exit 1
-    mkdir -p $WATCH_MEDIA_FOLDER || exit 1
-    mkdir -p $WATCH_OTHER_FOLDER || exit 1
-    [ -x "$FILEBOT" ] || exit 1
-    [ -x "$CLOUD_CMD" ] || exit 1
+
+    [ -x "$FILEBOT_CMD" ] || (echo -en "Check the binaries:\n - Filebot: $FILEBOT_CMD \n" && exit 1)
+    [ -x "$CLOUD_CMD" ] || (echo -en "Check the binaries:\n - Cloud: $CLOUD_CMD\n" && exit 1)
+
+    virgin=0
+    ls $LOGFILE $LOGFILEBOT $WATCH_MEDIA_FOLDER $WATCH_OTHER_FOLDER $INCOMING_MEDIA_FOLDER $INCOMING_OTHER_FOLDER $OUTPUT_MOVIES_FOLDER $OUTPUT_TVSHOWS_FOLDER $CLOUD_MEDIA_FOLDER $CLOUD_OTHER_FOLDER &>/dev/null || virgin=1
+
+    if [ $virgin -eq 1 ];then
+        echo "It seems to be your first time or some folders are missing. Take a look at my configuration:"
+        echo "
+Logfiles
+ - General log: $LOGFILE
+ - Filebot log: $LOGFILEBOT
+
+Folders
+ - Watch media: $WATCH_MEDIA_FOLDER
+ - Watch other: $WATCH_OTHER_FOLDER
+ - Incoming media: $INCOMING_MEDIA_FOLDER
+ - Incoming other $INCOMING_OTHER_FOLDER
+ - Archive movies: $OUTPUT_MOVIES_FOLDER
+ - Archive TV shows: $OUTPUT_TVSHOWS_FOLDER
+ - Cloud remote media: $CLOUD_MEDIA_FOLDER
+ - Cloud remote other: $CLOUD_OTHER_FOLDER
+"
+        while true; do
+            read -p "Should I try to create the missing folders? [Y] / n" yn
+            case $yn in
+                [Yy] )
+                    mkdir -p `dirname "$LOGFILE"` || ( echo "Unable to create `dirname "$LOGFILE"` " && exit 1 )
+                    mkdir -p `dirname "$LOGFILEBOT"` || ( echo "Unable to create `dirname "$LOGFILEBOT"` " && exit 1 )
+                    mkdir -p $INCOMING_MEDIA_FOLDER || ( echo "Unable to create $INCOMING_MEDIA_FOLDER " && exit 1 )
+                    mkdir -p $INCOMING_OTHER_FOLDER || ( echo "Unable to create $INCOMING_OTHER_FOLDER " && exit 1 )
+                    mkdir -p $OUTPUT_MOVIES_FOLDER || ( echo "Unable to create $OUTPUT_MOVIES_FOLDER " && exit 1 )
+                    mkdir -p $OUTPUT_TVSHOWS_FOLDER || ( echo "Unable to create $OUTPUT_TVSHOWS_FOLDER " && exit 1 )
+                    mkdir -p $WATCH_MEDIA_FOLDER || ( echo "Unable to create $WATCH_MEDIA_FOLDER " && exit 1 )
+                    mkdir -p $WATCH_OTHER_FOLDER || ( echo "Unable to create $WATCH_OTHER_FOLDER " && exit 1 )
+                    break
+                    ;;
+                [Nn] )
+                    echo "Exiting..."
+                    exit 1
+                    ;;
+                * ) echo "Please answer with y or n.";;
+            esac
+        done
+    fi
+
 }
 
 #setsid myscript.sh >/dev/null 2>&1 < /dev/null &
@@ -265,7 +300,7 @@ add_torrents (){
 
 }
 filebot_command(){
-    $FILEBOT -script fn:amc -non-strict --def movieFormat="$FILEBOT_MOVIES_FORMAT" seriesFormat="$FILEBOT_SERIES_FORMAT" animeFormat="$FILEBOT_ANIME_FORMAT" music=n excludeList=/var/log/amc-exclude.txt subtitles=en --log-file /var/log/amc.log --conflict auto  --log all --action $1 "$2" >> $LOGFILE 2>&1
+    $FILEBOT_CMD -script fn:amc -non-strict --def movieFormat="$FILEBOT_MOVIES_FORMAT" seriesFormat="$FILEBOT_SERIES_FORMAT" animeFormat="$FILEBOT_ANIME_FORMAT" music=n excludeList=/var/log/amc-exclude.txt subtitles=en --log-file /var/log/amc.log --conflict auto  --log all --action $1 "$2" >> $LOGFILE 2>&1
     return $?
 }
 filebot_process (){
