@@ -1,5 +1,18 @@
 #!/usr/bin/env bash
 
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 mypid=$$
 OPTS=`getopt -o vhf --long file:,log:,log-filebot:,watch:,watch-other:,incoming:,incoming-other:,output-movies:,output-tvshows:,cloud:,cloud-other:,filebot-cmd:,cloud-cmd:,verbose,help,version -n 'parse-options' -- "$@"`
 
@@ -35,12 +48,10 @@ CLOUD_CMD="/opt/dbox/dropbox_uploader.sh"
 export PATH="/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/root/bin"
 
 VERSION="1.0-Togusa"
-LICENSE="
-Copyright (C) `date '+%Y'` Licensed under GPLv3
+LICENSE="Copyright (C) `date '+%Y'` Licensed under GPLv3
 torrentwatcher comes with ABSOLUTELY NO WARRANTY.  This is free software, and you
 are welcome to redistribute it under certain conditions.  See the GNU
-General Public License Version 3 for details.
-"
+General Public License Version 3 for details."
 
 help (){
     printf %s "\
@@ -48,7 +59,7 @@ torrentwatcher version $VERSION
 
 $LICENSE
 
-torrentwatcher is simple yet functional script to help in th automation of torrent download and classification
+torrentwatcher is a simple yet functional script to help with the automation of torrent download and classification
 
 Usage: torrentwatcher [OPTIONS]
 
@@ -128,6 +139,7 @@ readopts(){
         --cloud-other) CLOUD_OTHER_FOLDER="$2"; shift 2 ;;
         --filebot-cmd) FILEBOT_CMD="$2"; shift 2 ;;
         --cloud-cmd) CLOUD_CMD="$2"; shift 2 ;;
+        --version) version exit;;
         -- ) shift; break ;;
         * ) break ;;
       esac
@@ -135,7 +147,7 @@ readopts(){
 }
 
 
-create_folders(){
+check_environment(){
     mkdir -p `dirname "$LOGFILE"` || exit 1
     mkdir -p `dirname "$LOGFILEBOT"` || exit 1
     mkdir -p `dirname "$LOGFILE"` || exit 1
@@ -163,7 +175,7 @@ create_folders(){
 #         if [ $? = 0 ]
 #         then
 #                 ... do something ...
-#         fi
+#             fi
 # done
 
 # tail -fn0 logfile | awk '/pattern/ { print | "command" }'
@@ -436,9 +448,7 @@ logtail(){
 
 readopts
 
-create_folders
-set
-env
+check_environment
 
 exit 0
 
