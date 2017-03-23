@@ -1,0 +1,14 @@
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.log
+*~
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+.Trash-*
+/docker

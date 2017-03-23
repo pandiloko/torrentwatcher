@@ -149,11 +149,11 @@ readopts(){
 
 check_environment(){
 
-    [ -x "$FILEBOT_CMD" ] || (echo -en "Check the binaries:\n - Filebot: $FILEBOT_CMD \n" && exit 1)
-    [ -x "$CLOUD_CMD" ] || (echo -en "Check the binaries:\n - Cloud: $CLOUD_CMD\n" && exit 1)
+    [ -x "$FILEBOT_CMD" ] || { echo -en "Check the binaries:\n - Filebot: $FILEBOT_CMD \n" && exit 1; }
+    [ -x "$CLOUD_CMD" ] || { echo -en "Check the binaries:\n - Cloud: $CLOUD_CMD\n" && exit 1; }
 
     virgin=0
-    ls $LOGFILE $LOGFILEBOT $WATCH_MEDIA_FOLDER $WATCH_OTHER_FOLDER $INCOMING_MEDIA_FOLDER $INCOMING_OTHER_FOLDER $OUTPUT_MOVIES_FOLDER $OUTPUT_TVSHOWS_FOLDER $CLOUD_MEDIA_FOLDER $CLOUD_OTHER_FOLDER &>/dev/null || virgin=1
+    ls $WATCH_MEDIA_FOLDER $WATCH_OTHER_FOLDER $INCOMING_MEDIA_FOLDER $INCOMING_OTHER_FOLDER $OUTPUT_MOVIES_FOLDER $OUTPUT_TVSHOWS_FOLDER `dirname "$LOGFILE"` `dirname "$LOGFILEBOT"`  &>/dev/null || virgin=1
 
     if [ $virgin -eq 1 ];then
         echo "It seems to be your first time or some folders are missing. Take a look at my configuration:"
@@ -173,17 +173,10 @@ Folders
  - Cloud remote other: $CLOUD_OTHER_FOLDER
 "
         while true; do
-            read -p "Should I try to create the missing folders? [Y] / n" yn
+            read -p "Should I try to create the missing folders? y / n: " yn
             case $yn in
                 [Yy] )
-                    mkdir -p `dirname "$LOGFILE"` || ( echo "Unable to create `dirname "$LOGFILE"` " && exit 1 )
-                    mkdir -p `dirname "$LOGFILEBOT"` || ( echo "Unable to create `dirname "$LOGFILEBOT"` " && exit 1 )
-                    mkdir -p $INCOMING_MEDIA_FOLDER || ( echo "Unable to create $INCOMING_MEDIA_FOLDER " && exit 1 )
-                    mkdir -p $INCOMING_OTHER_FOLDER || ( echo "Unable to create $INCOMING_OTHER_FOLDER " && exit 1 )
-                    mkdir -p $OUTPUT_MOVIES_FOLDER || ( echo "Unable to create $OUTPUT_MOVIES_FOLDER " && exit 1 )
-                    mkdir -p $OUTPUT_TVSHOWS_FOLDER || ( echo "Unable to create $OUTPUT_TVSHOWS_FOLDER " && exit 1 )
-                    mkdir -p $WATCH_MEDIA_FOLDER || ( echo "Unable to create $WATCH_MEDIA_FOLDER " && exit 1 )
-                    mkdir -p $WATCH_OTHER_FOLDER || ( echo "Unable to create $WATCH_OTHER_FOLDER " && exit 1 )
+                    mkdir -p `dirname "$LOGFILE"` `dirname "$LOGFILEBOT"` $INCOMING_MEDIA_FOLDER  $INCOMING_OTHER_FOLDER $OUTPUT_MOVIES_FOLDER $OUTPUT_TVSHOWS_FOLDER $WATCH_MEDIA_FOLDER  $WATCH_OTHER_FOLDER ||  exit 1
                     break
                     ;;
                 [Nn] )
@@ -482,7 +475,6 @@ logtail(){
 ###############################
 
 readopts
-
 check_environment
 
 exit 0
@@ -495,14 +487,10 @@ if ls $PIDFILE &>/dev/null; then
     logger "There was a PID file but no corresponding process was running. "
 fi
 
-
 echo $mypid > $PIDFILE
 trap finish EXIT
 
-
-
 logger "Starting TorrentWatcher..."
-
 
 process_torrent_queue
 add_torrents
