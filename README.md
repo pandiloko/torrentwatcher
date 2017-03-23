@@ -36,8 +36,11 @@ This is how the data flows:
 There is no installation. Just run it!! ... I'm kidding, of course there is no installation as this is a bash script, but there are some (many) requirements. 
 ### Docker
 Docker container is on its way. Pre-alpha version available. Build with:
-`docker build . --quiet --rm -t torrentwatcher`
-Execute:
+
+	docker build . --quiet --rm -t torrentwatcher
+
+Execute with:
+
 	# still in project root
 	docker run --cap-add=NET_ADMIN --device /dev/net/tun -v $PWD/docker:/opt --rm -it torrentwatcher
 	# files will be generated on ./docker
