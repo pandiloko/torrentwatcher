@@ -37,6 +37,10 @@ There is no installation. Just run it!! ... I'm kidding, of course there is no i
 ### Docker
 Docker container is on its way. Pre-alpha version available. Build with:
 `docker build . --quiet --rm -t torrentwatcher`
+Execute:
+	# still in project root
+	docker run --cap-add=NET_ADMIN --device /dev/net/tun -v $PWD/docker:/opt --rm -it torrentwatcher
+	# files will be generated on ./docker
 
 ### Requirements
 Install following packages:
