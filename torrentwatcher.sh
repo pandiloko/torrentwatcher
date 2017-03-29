@@ -26,6 +26,7 @@ LOGFILE="$__dir/var/log/torrentwatcher.log"
 LOGFILEBOT="$__dir/var/log/filebot.log"
 PIDFILE="$__dir/var/run/torrentwatcher.pid"
 
+INCOMPLETE_FOLDER="$__dir/incomplete/"
 WATCH_MEDIA_FOLDER="$__dir/watch/media/"
 WATCH_OTHER_FOLDER="$__dir/watch/other/"
 
@@ -44,6 +45,9 @@ FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - 
 FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}"
 
 CLOUD_CMD="/opt/dbox/dropbox_uploader.sh"
+
+VPN_OK=NL
+VPN_ERR=DE
 
 export PATH="/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/root/bin"
 
@@ -66,6 +70,7 @@ Usage: torrentwatcher [OPTIONS]
 Options
      --log FILE              location for the main log file
      --log-filebot FILE      location for the filebot operations log file
+     --incomplete PATH       path for all the incomplete downloads
      --incoming PATH         path for the downloaded movies and tv shows
      --incoming-other PATH   path for the other downloaded stuff
      --output-movies PATH    final destination path for classified movies
@@ -112,7 +117,6 @@ readconfig(){
 }
 
 readopts(){
-
     if [ $? != 0 ] ; then echo "Failed parsing options." >&2 ; exit 1 ; fi
 
     echo "$OPTS"
@@ -130,6 +134,7 @@ readopts(){
         --version) version; exit 0;;
         --log) LOGFILE="$2"; shift 2 ;;
         --log-filebot) LOGFILEBOT="$2"; shift 2 ;;
+        --incomplete) INCOMPLETE_FOLDER="$2"; shift 2 ;;
         --watch) WATCH_MEDIA_FOLDER="$2"; shift 2 ;;
         --watch-other) WATCH_OTHER_FOLDER="$2"; shift 2 ;;
         --incoming-other) INCOMING_OTHER_FOLDER="$2"; shift 2 ;;
@@ -153,7 +158,7 @@ check_environment(){
     [ -x "$CLOUD_CMD" ] || { echo -en "Check the binaries:\n - Cloud: $CLOUD_CMD\n" && exit 1; }
 
     virgin=0
-    ls $WATCH_MEDIA_FOLDER $WATCH_OTHER_FOLDER $INCOMING_MEDIA_FOLDER $INCOMING_OTHER_FOLDER $OUTPUT_MOVIES_FOLDER $OUTPUT_TVSHOWS_FOLDER `dirname "$LOGFILE"` `dirname "$LOGFILEBOT"`  &>/dev/null || virgin=1
+    ls $INCOMPLETE_FOLDER $WATCH_MEDIA_FOLDER $WATCH_OTHER_FOLDER $INCOMING_MEDIA_FOLDER $INCOMING_OTHER_FOLDER $OUTPUT_MOVIES_FOLDER $OUTPUT_TVSHOWS_FOLDER `dirname "$LOGFILE"` `dirname "$LOGFILEBOT"`  &>/dev/null || virgin=1
 
     if [ $virgin -eq 1 ];then
         echo "It seems to be your first time or some folders are missing. Take a look at my configuration:"
@@ -163,6 +168,7 @@ Logfiles
  - Filebot log: $LOGFILEBOT
 
 Folders
+ - Incomplete Downloads: $INCOMPLETE_FOLDER
  - Watch media: $WATCH_MEDIA_FOLDER
  - Watch other: $WATCH_OTHER_FOLDER
  - Incoming media: $INCOMING_MEDIA_FOLDER
@@ -172,20 +178,25 @@ Folders
  - Cloud remote media: $CLOUD_MEDIA_FOLDER
  - Cloud remote other: $CLOUD_OTHER_FOLDER
 "
-        while true; do
-            read -p "Should I try to create the missing folders? y / n: " yn
-            case $yn in
-                [Yy] )
-                    mkdir -p `dirname "$LOGFILE"` `dirname "$LOGFILEBOT"` $INCOMING_MEDIA_FOLDER  $INCOMING_OTHER_FOLDER $OUTPUT_MOVIES_FOLDER $OUTPUT_TVSHOWS_FOLDER $WATCH_MEDIA_FOLDER  $WATCH_OTHER_FOLDER ||  exit 1
-                    break
-                    ;;
-                [Nn] )
-                    echo "Exiting..."
-                    exit 1
-                    ;;
-                * ) echo "Please answer with y or n.";;
-            esac
-        done
+        # Ask only if we are interactive, else just try to create
+        if [ ! -v PS1 ] ; then
+            while true; do
+                read -p "Should I try to create the missing folders? y / n: " yn
+                case $yn in
+                    [Yy] )
+                        mkdir -p `dirname "$LOGFILE"` `dirname "$LOGFILEBOT"` $INCOMING_MEDIA_FOLDER  $INCOMING_OTHER_FOLDER $OUTPUT_MOVIES_FOLDER $OUTPUT_TVSHOWS_FOLDER $WATCH_MEDIA_FOLDER  $WATCH_OTHER_FOLDER $INCOMPLETE_FOLDER||  exit 1
+                        break
+                        ;;
+                    [Nn] )
+                        echo "Exiting..."
+                        exit 1
+                        ;;
+                    * ) echo "Please answer with y or n.";;
+                esac
+            done
+        else
+            mkdir -p `dirname "$LOGFILE"` `dirname "$LOGFILEBOT"` $INCOMING_MEDIA_FOLDER  $INCOMING_OTHER_FOLDER $OUTPUT_MOVIES_FOLDER $OUTPUT_TVSHOWS_FOLDER $WATCH_MEDIA_FOLDER  $WATCH_OTHER_FOLDER $INCOMPLETE_FOLDER||  exit 1
+        fi
     fi
 
 }
@@ -221,7 +232,8 @@ killtree() {
 
 finish (){
     logger "Finishing TorrentWatcher. Cleaning up tasks..."
-
+    srv transmission stop >> $LOGFILE 2>&1
+    rm -rf $PIDFILE
     # TODO: PROCESS KILLING NEEDS TESTING
     ############
     /bin/kill -- -0 #kill all child processes
@@ -231,7 +243,7 @@ finish (){
     ############
     # killtree $@
     ############
-    rm -rf $PIDFILE
+    
     wait
 }
 
@@ -309,8 +321,8 @@ filebot_process (){
 
     # Pick any of the files and obtain the main folder
     folder="`transmission-remote -t $2 -f | tail -n1 | sed -E 's/.*[0-9.]+ [kgmbKGMB]+[ ]+//' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`"
+    
     # Go up in directory tree until getting "."
-
     parent=`dirname "$folder"`
     while [ "$parent" != "." ]
     do
@@ -370,6 +382,53 @@ process_torrent_queue (){
     done
 }
 
+srv(){
+# parameters:
+#     $1-> service
+#     $2-> action [start,stop,status,restart]
+# Performs the desired action with the requested service using the appropiate call
+# Some light OS detection decides if we are in docker container or FreeBSD and
+# then falls back to systemd
+###############################################################################
+
+    if [ -f /.dockerenv ]; then
+        #We are in container
+        case $2 in 
+            start|stop|restart|status)
+                sudo supervisorctl $2 $1
+                return
+                ;;
+            *)
+                return 1
+                ;;
+        esac
+    elif uname -a | grep -i freebsd ; then
+        #We are in freebsd
+        case $2 in 
+            start|stop|restart|status)
+                sudo service $1 $2
+                return
+                ;;
+            *)
+                return 1
+                ;;
+        esac
+    else
+        #We are in some major distro with systemd
+        case $2 in 
+            start|stop|restart|status)
+                sudo systemctl $2 $1
+                return
+                ;;
+            *)
+                return 1
+                ;;
+        esac
+    fi
+    
+    logger "We should never reach this point"
+    return 1
+}
 check_vpn(){
 # Checks if we are going out through VPN and start/stop transmission accordingly
 #
@@ -381,16 +440,17 @@ check_vpn(){
     myip=`dig +short myip.opendns.com @resolver1.opendns.com`
     vpn=`geoiplookup $myip | cut -d":" -f2 | cut -d"," -f1 | tr -d " "`
 
-    if [ $vpn == "NL" ]
+    if [ $vpn != $VPN_ERR ]
         then
         logger "We are in VPN!! Country: $vpn"
-        service transmission status >> $LOGFILE 2>&1
-        #TODO: ensure that transmission is still up and running
+        srv transmission status || srv transmission start
+        srv openvpn status
     else
         logger "We are not in VPN!! Country: $vpn"
-        logger "Trying to stop transmission"
-        #logger "`service transmission stop`"
-        service transmission status >> $LOGFILE 2>&1
+        logger "Trying to stop transmission..."
+        srv transmission stop >> $LOGFILE 2>&1
+        logger "Restarting VPN..."
+        srv openvpn restart
     fi
 }
 
@@ -477,8 +537,6 @@ logtail(){
 readopts
 check_environment
 
-exit 0
-
 if ls $PIDFILE &>/dev/null; then
     if ps aux | grep `cat $PIDFILE` &>/dev/null ;then
         logger "TorrenWatcher is already running (`cat $PIDFILE`)"
@@ -487,14 +545,18 @@ if ls $PIDFILE &>/dev/null; then
     logger "There was a PID file but no corresponding process was running. "
 fi
 
+
+[ -d "`dirname $PIDFILE`" ] || mkdir -p "`dirname $PIDFILE`"
 echo $mypid > $PIDFILE
 trap finish EXIT
 
 logger "Starting TorrentWatcher..."
+check_vpn
 
 process_torrent_queue
 add_torrents
 
+exit 0
 #cloud_monitor only needed if there isn't any other cloud monitor service installed and running
 cloud_monitor &
 
