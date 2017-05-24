@@ -44,14 +44,14 @@ FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER{y} {n} [{rating}]/{n} - {y} - {genr
 FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t} {group}"
 FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}"
 
-CLOUD_CMD="/opt/dbox/dropbox_uploader.sh"
+CLOUD_CMD=`type -p dropbox_uploader.sh` ||"/opt/dbox/dropbox_uploader.sh"
 
 VPN_OK=NL
-VPN_ERR=DE
+VPN_EXT=0
 
 export PATH="/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/root/bin"
 
-VERSION="1.0-Togusa"
+VERSION="1.0-raging_Togusa"
 LICENSE="Copyright (C) `date '+%Y'` Licensed under GPLv3
 torrentwatcher comes with ABSOLUTELY NO WARRANTY.  This is free software, and you
 are welcome to redistribute it under certain conditions.  See the GNU
@@ -73,14 +73,19 @@ Options
      --incomplete PATH       path for all the incomplete downloads
      --incoming PATH         path for the downloaded movies and tv shows
      --incoming-other PATH   path for the other downloaded stuff
-     --output-movies PATH    final destination path for classified movies
-     --output-tvshows PATH   final destination path for classified tv shows
+     --output-movies PATH    classified movies archive
+     --output-tvshows PATH   classified tv shows archive
      --cloud PATH            absolute path for movies and tv shows incoming torrent files in the cloud storage
      --cloud-other PATH      absolute path for other stuff incoming torrent files in the cloud storage
+     --filebot-cmd FILE      filebot executable name with path. Default is trying to find with 'which'
+     --vpn COUNTRY-ID        Country where VPN IP should be geolocated. Format: ISO 3166-1 alpha-2 (2 characters)
+     --no-vpn                VPN is extern
+     
  -f, --file FILE             read configurations from specified file (bash syntax)
  -v, --verbose               increase verbosity
      --version               show version and exit
  -h, --help                  show this help message
+ 
 
 "
 }
@@ -144,7 +149,8 @@ readopts(){
         --cloud) CLOUD_MEDIA_FOLDER="$2"; shift 2 ;;
         --cloud-other) CLOUD_OTHER_FOLDER="$2"; shift 2 ;;
         --filebot-cmd) FILEBOT_CMD="$2"; shift 2 ;;
-        --cloud-cmd) CLOUD_CMD="$2"; shift 2 ;;
+        --vpn) VPN_OK="$2"; shift 2 ;;
+        --no-vpn) VPN_EXT=1"$2"; shift ;;
         -- ) shift; break ;;
         * ) break ;;
       esac
@@ -203,22 +209,7 @@ Folders
 
 #setsid myscript.sh >/dev/null 2>&1 < /dev/null &
 #exec > "$logfile" 2>&1 </dev/null
-#ps x -o  "%p %r %y %x %c "
-# kill -TERM -- -PID
-#       start-stop-daemon [option...] command
-
-
-# tail -fn0 logfile | \
-# while read line ; do
-#         echo "$line" | grep "pattern"
-#         if [ $? = 0 ]
-#         then
-#                 ... do something ...
-#             fi
-# done
-
 # tail -fn0 logfile | awk '/pattern/ { print | "command" }'
-
 
 killtree() {
     local _pid=$1
@@ -257,6 +248,10 @@ trim() {
 logger (){
     echo "`date +'%Y.%m.%d-%H:%M:%S'` [$mypid] - $1" >> $LOGFILE
 }
+
+###########################################
+####### Here begins the real meat##########
+###########################################
 
 extract_info () {
 # Parameters:
@@ -305,45 +300,15 @@ add_torrents (){
 
 }
 filebot_command(){
+# parameters:
+#     $1-> action [copy|move|link]
+#     $2-> src folder
+# Determines if file is alone or in a folder because we don't want to process the whole folder
+###############################################################################
     $FILEBOT_CMD -script fn:amc -non-strict --def movieFormat="$FILEBOT_MOVIES_FORMAT" seriesFormat="$FILEBOT_SERIES_FORMAT" animeFormat="$FILEBOT_ANIME_FORMAT" music=n excludeList=/var/log/amc-exclude.txt subtitles=en --log-file /var/log/amc.log --conflict auto  --log all --action $1 "$2" >> $LOGFILE 2>&1
     return $?
 }
-filebot_process (){
-# parameters:
-#     $1-> action
-#     $2-> torrent id
-# Determines if file is alone or in a folder because we don't want to process the whole folder
-#
-# TODO:
-#    on a second thought...
-#    Now that we have a separate folder for non-video files we could process the whole video folder each time and reduce complexity, couldn't we?
-###############################################################################
 
-    # Pick any of the files and obtain the main folder
-    folder="`transmission-remote -t $2 -f | tail -n1 | sed -E 's/.*[0-9.]+ [kgmbKGMB]+[ ]+//' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'`"
-    
-    # Go up in directory tree until getting "."
-    parent=`dirname "$folder"`
-    while [ "$parent" != "." ]
-    do
-        folder=$parent
-        parent=`dirname "$folder"`
-    done
-    if [ ! -z "$folder" ] && [ "$folder" == "." ] ; then
-        oIFS=$IFS
-        IFS=$'\n'
-        for file in "`transmission-remote -t $2 -f | tail -n +3 | cut -wf8-`"
-        do
-            filebot_command $1 "${INCOMING_MEDIA_FOLDER}${file}"
-            ret=$?
-        done
-        IFS=$oIFS
-    else
-        filebot_command $1 "${INCOMING_MEDIA_FOLDER}${folder}"
-        ret=$?
-    fi
-    return $ret
-}
 process_torrent_queue (){
 # Collects torrents with 100% Download and process them depending on State.
 # Stopped | Finished | Idle -> ensure files are copied and REMOVE FROM TRANSMISSION INCLUDING DATA
@@ -352,34 +317,35 @@ process_torrent_queue (){
 # TODO:
 #   - implement Idle timeout.
 #   - check permissions
-
-    for id in `transmission-remote -l|sed -e '1d;$d;'|grep "100%"| cut -wf2| grep -Eo '[0-9]+'`
-    do
-        # Copy infos into properly named lowercased variables
-        extract_info $id
-        if [[ "$location" -ef "$INCOMING_MEDIA_FOLDER" ]] ; then
-            logger "Processing torrent with ID: $id. $state"
-            case $state in
-                Stopped|Finished|Idle)
-                    logger "Archiving torrent with status $state"
-                    # ensure the files are already copied and remove the torrent+data from Transmission
-                    filebot_process copy $id
-                    if [ $? -eq 0 ]; then
+#   - move to temporary folder when "rad". Delete timebased
+###############################################################################
+    if filebot_command copy "${INCOMING_MEDIA_FOLDER}"; then
+        for id in `transmission-remote -l|sed -e '1d;$d;'|grep "100%"| tr -sd' '| cut -f2| grep -Eo '[0-9]+'`
+        do
+            # Copy infos into properly named lowercased variables
+            extract_info $id
+            if [[ "$location" -ef "$INCOMING_MEDIA_FOLDER" ]] ; then
+                logger "Processing torrent with ID: $id. $state"
+                case $state in
+                    Stopped|Finished|Idle)
+                        logger "Archiving torrent with status $state"
+                        # ensure the files are already copied and remove the torrent+data from Transmission
                         logger "Removing torrent from list, included data"
                         transmission-remote -t $id -rad >> $LOGFILE 2>&1
-                    fi
-                ;;
-                "Seeding")
-                    # Copy but don't delete torrent, we want to keep seeding until ratio is reached
-                    filebot_process copy $id
-                ;;
-                *)
-                ;;
-            esac
-        fi
-        # OTHER folder - remove torrent if finished, preserve disk data
-        [[ "$location" -ef "$INCOMING_OTHER_FOLDER" ]] && [[ $state == Finished ]] && transmission-remote -t $id -r >> $LOGFILE 2>&1
-    done
+                        fi
+                    ;;
+                    "Seeding")
+                        # Copy but don't delete torrent, we want to keep seeding until ratio is reached
+                        logger "Keep seeding, cabrones"
+                    ;;
+                    *)
+                    ;;
+                esac
+            fi
+            # OTHER folder - remove torrent if finished, preserve disk data
+            [[ "$location" -ef "$INCOMING_OTHER_FOLDER" ]] && [[ $state == Finished ]] && transmission-remote -t $id -r >> $LOGFILE 2>&1
+        done
+    fi
 }
 
 srv(){
@@ -440,17 +406,19 @@ check_vpn(){
     myip=`dig +short myip.opendns.com @resolver1.opendns.com`
     vpn=`geoiplookup $myip | cut -d":" -f2 | cut -d"," -f1 | tr -d " "`
 
-    if [ $vpn != $VPN_ERR ]
+    if [ $vpn == $VPN_OK ]
         then
-        logger "We are in VPN!! Country: $vpn"
+        logger "Geolocated in Country: $vpn"
         srv transmission status || srv transmission start
-        srv openvpn status
+        if [ $VPN_EXT -eq 0 ]; then srv openvpn status ; fi
     else
         logger "We are not in VPN!! Country: $vpn"
         logger "Trying to stop transmission..."
         srv transmission stop >> $LOGFILE 2>&1
-        logger "Restarting VPN..."
-        srv openvpn restart
+        if [ $VPN_EXT -eq 0 ]; then 
+            logger "Restarting VPN..."
+            srv openvpn restart
+        fi
     fi
 }
 
@@ -566,8 +534,10 @@ do
     file_monitor
     sleep 10 # Let some time to finish eventual subsequent uploads
     logger "Downloading torrent files to watched folder"
-    process_torrent_queue
-    add_torrents
+    if srv transmission status ; then
+        process_torrent_queue
+        add_torrents
+    fi
     logger "Checking VPN"
     check_vpn
 done
