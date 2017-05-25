@@ -7,7 +7,8 @@ FROM base/archlinux:latest
 
 RUN pacman  --needed  --noconfirm -Sy archlinux-keyring && \
     pacman-key --populate archlinux && \
-    pacman -Syy  && pacman -S --needed --noconfirm --quiet libx264 mesa-libgl transmission-cli libmediainfo mediainfo geoip geoip-database bind-tools openvpn git jre8-openjdk fontconfig chromaprint sudo xz gzip binutils unzip unrar grep fakeroot file cron java-openjfx wget vim iputils net-tools supervisor procps-ng mlocate which
+    pacman -Syy  && pacman -S --needed --noconfirm --quiet libx264 mesa-libgl transmission-cli libmediainfo mediainfo geoip geoip-database bind-tools openvpn git jre8-openjdk fontconfig chromaprint sudo xz gzip binutils unzip unrar grep fakeroot file cron java-openjfx wget vim iputils net-tools supervisor procps-ng mlocate which &&\
+    paccache -r && pacman -Scc
 # Filebot is an AUR package and must be installed with non-root user. See below after USER command
 
 ##Entry point
@@ -24,7 +25,7 @@ ENTRYPOINT ["/entrypoint.sh"]
 
 ##Process Management
 #########################
-COPY supervisord.conf /etc/supervisor.d/torrentwatcher.ini
+COPY torrentwatcher.ini /etc/supervisor.d/torrentwatcher.ini
 
 ##Network
 #########################
