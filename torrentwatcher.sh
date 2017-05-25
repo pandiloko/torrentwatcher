@@ -289,13 +289,11 @@ add_torrents (){
         transmission-remote -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1
         for i in ${WATCH_MEDIA_FOLDER}*.torrent ; do
             logger "Processing file: $i"
-            transmission-remote -a "$i" -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1
-            mv "$i" "$i.added"
+            transmission-remote -a "$i" -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1 && mv "$i" "$i.added"
         done
         for i in ${WATCH_OTHER_FOLDER}*.torrent ; do
             logger "Processing file: $i"
-            transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1
-            mv "$i" "$i.added"
+            transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1 && mv "$i" "$i.added"
         done
 
 }
