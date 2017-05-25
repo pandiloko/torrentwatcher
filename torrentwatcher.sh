@@ -408,7 +408,7 @@ check_vpn(){
     if [ $vpn == $VPN_OK ]
         then
         logger "Geolocated in Country: $vpn"
-        srv transmission status || srv transmission start
+        if srv transmission status | grep -q STOPPED ;then  srv transmission start; fi
         if [ $VPN_EXT -eq 0 ]; then srv openvpn status ; fi
     else
         logger "We are not in VPN!! Country: $vpn"
@@ -523,7 +523,6 @@ check_vpn
 process_torrent_queue
 add_torrents
 
-exit 0
 #cloud_monitor only needed if there isn't any other cloud monitor service installed and running
 cloud_monitor &
 
