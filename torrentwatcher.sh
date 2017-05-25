@@ -14,7 +14,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 mypid=$$
-OPTS=`getopt -o vhf --long file:,log:,log-filebot:,watch:,watch-other:,incoming:,incoming-other:,output-movies:,output-tvshows:,cloud:,cloud-other:,filebot-cmd:,cloud-cmd:,verbose,help,version -n 'parse-options' -- "$@"`
+OPTS=`getopt -o vhf --long file:,log:,log-filebot:,watch:,watch-other:,incoming:,incoming-other:,output-movies:,output-tvshows:,cloud:,cloud-other:,filebot-cmd:,cloud-cmd:,vpn:,no-vpn,verbose,help,version -n 'parse-options' -- "$@"`
 
 __dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 __file="${__dir}/$(basename "${BASH_SOURCE[0]}")"
@@ -44,7 +44,7 @@ FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER{y} {n} [{rating}]/{n} - {y} - {genr
 FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t} {group}"
 FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}"
 
-CLOUD_CMD=`type -p dropbox_uploader.sh` ||"/opt/dbox/dropbox_uploader.sh"
+CLOUD_CMD=`type -p dropbox_uploader.sh` || CLOUD_CMD="/opt/dbox/dropbox_uploader.sh"
 
 VPN_OK=NL
 VPN_EXT=0
@@ -150,7 +150,7 @@ readopts(){
         --cloud-other) CLOUD_OTHER_FOLDER="$2"; shift 2 ;;
         --filebot-cmd) FILEBOT_CMD="$2"; shift 2 ;;
         --vpn) VPN_OK="$2"; shift 2 ;;
-        --no-vpn) VPN_EXT=1"$2"; shift ;;
+        --no-vpn) VPN_EXT=1; shift ;;
         -- ) shift; break ;;
         * ) break ;;
       esac
@@ -332,7 +332,6 @@ process_torrent_queue (){
                         # ensure the files are already copied and remove the torrent+data from Transmission
                         logger "Removing torrent from list, included data"
                         transmission-remote -t $id -rad >> $LOGFILE 2>&1
-                        fi
                     ;;
                     "Seeding")
                         # Copy but don't delete torrent, we want to keep seeding until ratio is reached
