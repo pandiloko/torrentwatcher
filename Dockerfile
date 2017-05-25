@@ -7,7 +7,7 @@ FROM base/archlinux:latest
 
 RUN pacman  --needed  --noconfirm -Sy archlinux-keyring && \
     pacman-key --populate archlinux && \
-    pacman -Syy  && pacman -S --needed --noconfirm --quiet libx264 mesa-libgl transmission-cli libmediainfo mediainfo geoip geoip-database bind-tools openvpn git jre8-openjdk fontconfig chromaprint sudo xz gzip binutils unzip unrar grep fakeroot file cron java-openjfx wget vim iputils net-tools supervisor procps-ng mlocate which &&\
+    pacman -Syy  && pacman -S --needed --noconfirm --quiet libx264 mesa-libgl transmission-cli libmediainfo mediainfo geoip geoip-database bind-tools openvpn git jre8-openjdk fontconfig chromaprint sudo xz gzip binutils unzip unrar grep fakeroot file cron java-openjfx wget vim iputils net-tools supervisor procps-ng mlocate which inotify-tools &&\
     paccache -r && pacman -Scc
 # Filebot is an AUR package and must be installed with non-root user. See below after USER command
 
@@ -22,10 +22,6 @@ exec "$@"' >> /entrypoint.sh && chmod 755 /entrypoint.sh
 # It will perform the copy on docker creation only or if files are deleted from host 
 # See at the end of this file for more details
 ENTRYPOINT ["/entrypoint.sh"]
-
-##Process Management
-#########################
-COPY torrentwatcher.ini /etc/supervisor.d/torrentwatcher.ini
 
 ##Network
 #########################
@@ -48,12 +44,14 @@ RUN cd /tmp &&  git clone https://aur.archlinux.org/filebot.git && cd filebot &&
 
 WORKDIR /opt/
 COPY torrentwatcher.sh /opt/torrentwatcher/torrentwatcher.sh
+COPY torrentwatcher.ini /opt/torrentwatcher.ini
 COPY dbox/ /opt/dbox
 COPY geoipupdate.sh /usr/local/bin/geoipupdate.sh
 COPY vpn/ /opt/vpn
 
 #COPY or ADD do not honor USER, so we must chown everything (should we change to Rocker?) 
-RUN sudo /usr/local/bin/geoipupdate.sh &&\
+RUN sudo ln -s /opt/torrentwatcher.ini /etc/supervisor.d/torrent.ini &&\
+    sudo /usr/local/bin/geoipupdate.sh &&\
     wget static.inquant.de/bashrc -O ~/.bashrc && \
     sudo chown -R watcher:watcher /opt/ && \
     cd /opt/vpn &&  l=( *ovpn ) && cp ${l[0]} user.ovpn  && \
