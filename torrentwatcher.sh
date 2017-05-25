@@ -303,7 +303,7 @@ filebot_command(){
 #     $2-> src folder
 # Determines if file is alone or in a folder because we don't want to process the whole folder
 ###############################################################################
-    $FILEBOT_CMD -script fn:amc -non-strict --def movieFormat="$FILEBOT_MOVIES_FORMAT" seriesFormat="$FILEBOT_SERIES_FORMAT" animeFormat="$FILEBOT_ANIME_FORMAT" music=n excludeList=/var/log/amc-exclude.txt subtitles=en --log-file /var/log/amc.log --conflict auto  --log all --action $1 "$2" >> $LOGFILE 2>&1
+    $FILEBOT_CMD -script fn:amc -non-strict --def movieFormat="$FILEBOT_MOVIES_FORMAT" seriesFormat="$FILEBOT_SERIES_FORMAT" animeFormat="$FILEBOT_ANIME_FORMAT" music=n excludeList=$__dir/var/log/amc-exclude.txt subtitles=en --log-file $__dir/var/log/amc.log --conflict auto  --log all --action $1 "$2" >> $LOGFILE 2>&1
     return $?
 }
 
@@ -318,7 +318,7 @@ process_torrent_queue (){
 #   - move to temporary folder when "rad". Delete timebased
 ###############################################################################
     if filebot_command copy "${INCOMING_MEDIA_FOLDER}"; then
-        for id in `transmission-remote -l|sed -e '1d;$d;'|grep "100%"| tr -sd' '| cut -f2| grep -Eo '[0-9]+'`
+        for id in `transmission-remote -l|sed -e '1d;$d;'|grep "100%"| tr -s ' '| cut -f2 -d ' ' | grep -Eo '[0-9]+'`
         do
             # Copy infos into properly named lowercased variables
             extract_info $id
