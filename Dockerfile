@@ -48,6 +48,8 @@ COPY torrentwatcher.ini /opt/torrentwatcher.ini
 COPY dbox/ /opt/dbox
 COPY geoipupdate.sh /usr/local/bin/geoipupdate.sh
 COPY vpn/ /opt/vpn
+COPY .dropbox_uploader /opt/.dropbox_uploader
+
 
 #COPY or ADD do not honor USER, so we must chown everything (should we change to Rocker?) 
 RUN sudo ln -s /opt/torrentwatcher.ini /etc/supervisor.d/torrent.ini &&\
