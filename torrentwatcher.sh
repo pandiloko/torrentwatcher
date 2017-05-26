@@ -122,10 +122,10 @@ readconfig(){
 }
 
 readopts(){
-    if [ $? != 0 ] ; then echo "Failed parsing options." >&2 ; exit 1 ; fi
-
     echo "$OPTS"
     eval set -- "$OPTS"
+    
+    if [ $? != 0 ] ; then echo "Failed parsing options." >&2 ; exit 1 ; fi
 
     while true; do
       case "$1" in
@@ -145,7 +145,7 @@ readopts(){
         --incoming-other) INCOMING_OTHER_FOLDER="$2"; shift 2 ;;
         --incoming) INCOMING_MEDIA_FOLDER="$2"; shift 2 ;;
         --output-movies) OUTPUT_MOVIES_FOLDER="$2"; shift 2 ;;
-        --output-tvshows) OUTPUT_MOVIES_FOLDER="$2"; shift 2 ;;
+        --output-tvshows) OUTPUT_TVSHOWS_FOLDER="$2"; shift 2 ;;
         --cloud) CLOUD_MEDIA_FOLDER="$2"; shift 2 ;;
         --cloud-other) CLOUD_OTHER_FOLDER="$2"; shift 2 ;;
         --filebot-cmd) FILEBOT_CMD="$2"; shift 2 ;;
@@ -205,6 +205,9 @@ Folders
         fi
     fi
 
+    FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER{y} {n} [{rating}]/{n} - {y} - {genres} {group}"
+    FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t} {group}"
+    FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}"
 }
 
 #setsid myscript.sh >/dev/null 2>&1 < /dev/null &
