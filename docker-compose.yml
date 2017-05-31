@@ -1,0 +1,18 @@
+version: "3"
+services:
+  tw:
+
+    build:
+      context: ./
+    image: torrentwatcher
+    container_name: tw
+    environment:
+      - UID=99
+      - GROUPS=99
+    ports:
+      - "9091:9091"
+
+    volumes:
+      - ./docker/:/opt
+      - /drako/:/drako/
+
