@@ -21,6 +21,8 @@ __file="${__dir}/$(basename "${BASH_SOURCE[0]}")"
 __base="$(basename ${__file} .sh)"
 __root="$(cd "$(dirname "${__dir}")" && pwd)"
 
+#seconds to delete an idle torrent (259200 seconds = 3 days)
+idleTTL=259200
 
 LOGFILE="$__dir/var/log/torrentwatcher.log"
 LOGFILEBOT="$__dir/var/log/filebot.log"
@@ -249,7 +251,7 @@ trim() {
 }
 
 logger (){
-    echo "`date +'%Y.%m.%d-%H:%M:%S'` [$mypid] - $1" >> $LOGFILE
+    echo "[torrentwatcher] `date +'%Y.%m.%d-%H:%M:%S'` [$mypid] - $1" >> $LOGFILE
 }
 
 ###########################################
@@ -291,11 +293,11 @@ add_torrents (){
 
         transmission-remote -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1
         for i in ${WATCH_MEDIA_FOLDER}*.torrent ; do
-            logger "Processing file: $i"
+            logger "Adding media torrents: $i"
             transmission-remote -a "$i" -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1 && mv "$i" "$i.added"
         done
         for i in ${WATCH_OTHER_FOLDER}*.torrent ; do
-            logger "Processing file: $i"
+            logger "Adding other torrents: $i"
             transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1 && mv "$i" "$i.added"
         done
 
@@ -310,6 +312,16 @@ filebot_command(){
     return $?
 }
 
+process_torrent(){
+    if [ -d "${INCOMING_MEDIA_FOLDER}/$name" ]; then
+        ls /tmp/filebot-$hash.log || filebot_command copy "${INCOMING_MEDIA_FOLDER}/$name" &> /tmp/filebot-$hash.log
+        if grep  -E 'Failure|java\.io\.IOException' /tmp/filebot-lastrun.log &>/dev/null; then 
+                rsync -rvhP --size-only "${INCOMING_MEDIA_FOLDER}/$name" "$INCOMING_OTHER_FOLDER/misc"
+        fi
+    else
+        filebot_command copy "${INCOMING_MEDIA_FOLDER}" &> /tmp/filebot-lastrun.log
+    fi
+}
 process_torrent_queue (){
 # Collects torrents with 100% Download and process them depending on State.
 # Stopped | Finished | Idle -> ensure files are copied and REMOVE FROM TRANSMISSION INCLUDING DATA
@@ -320,32 +332,48 @@ process_torrent_queue (){
 #   - check permissions
 #   - move to temporary folder when "rad". Delete timebased
 ###############################################################################
-    if filebot_command copy "${INCOMING_MEDIA_FOLDER}"; then
-        for id in `transmission-remote -l|sed -e '1d;$d;'|grep "100%"| tr -s ' '| cut -f2 -d ' ' | grep -Eo '[0-9]+'`
-        do
-            # Copy infos into properly named lowercased variables
-            extract_info $id
-            if [[ "$location" -ef "$INCOMING_MEDIA_FOLDER" ]] ; then
-                logger "Processing torrent with ID: $id. $state"
-                case $state in
-                    Stopped|Finished|Idle)
-                        logger "Archiving torrent with status $state"
-                        # ensure the files are already copied and remove the torrent+data from Transmission
-                        logger "Removing torrent from list, included data"
-                        transmission-remote -t $id -rad >> $LOGFILE 2>&1
-                    ;;
-                    "Seeding")
-                        # Copy but don't delete torrent, we want to keep seeding until ratio is reached
-                        logger "Keep seeding, cabrones"
-                    ;;
-                    *)
-                    ;;
-                esac
-            fi
-            # OTHER folder - remove torrent if finished, preserve disk data
-            [[ "$location" -ef "$INCOMING_OTHER_FOLDER" ]] && [[ $state == Finished ]] && transmission-remote -t $id -r >> $LOGFILE 2>&1
-        done
-    fi
+
+    for id in `transmission-remote -l|sed -e '1d;$d;'|grep "100%"| tr -s ' '| cut -f2 -d ' ' | grep -Eo '[0-9]+'`
+    do
+        # Copy infos into properly named lowercased variables
+        extract_info $id
+        if [[ "$location" -ef "$INCOMING_MEDIA_FOLDER" ]] ; then
+            process_torrent
+            logger "Processing torrent with ID: $id. $state"
+            case $state in
+                Stopped|Finished)
+                    logger "Archiving torrent with status $state"
+                    # ensure the files are already copied and remove the torrent+data from Transmission
+                    logger "Removing torrent from list, included data"
+                    transmission-remote -t $id -rad >> $LOGFILE 2>&1
+                    ll /tmp/$hash &> /dev/null && rm -f /tmp/$hash
+                ;;
+                Idle)
+                    logger "Idle torrent. Checking for how long"
+                    if ll /tmp/$hash &> /dev/null ; then
+                        seconds=$(( `date +%s` - `cat /tmp/$hash` ))
+                        logger "Torrent idle for $seconds seconds. TTL is $idleTTL seconds"
+                        if [ $seconds -gt $idleTTL ] ; then
+                            logger "Removing IDLE torrent from list, included data"
+                            transmission-remote -t $id -rad >> $LOGFILE 2>&1
+                            rm -f /tmp/$hash
+                        fi
+                    else
+                        logger "Just arrived, creating file /tmp/$hash"
+                        date +%s > /tmp/$hash
+                    fi
+                ;;
+                "Seeding")
+                    # Copy but don't delete torrent, we want to keep seeding until ratio is reached
+                    logger "Keep seeding, cabrones"
+                ;;
+                *)
+                ;;
+            esac
+        fi
+        # OTHER folder - remove torrent if finished, preserve disk data
+        [[ "$location" -ef "$INCOMING_OTHER_FOLDER" ]] && [[ $state == Finished ]] && transmission-remote -t $id -r >> $LOGFILE 2>&1
+    done
 }
 
 srv(){
