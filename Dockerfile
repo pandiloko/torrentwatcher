@@ -7,8 +7,9 @@ FROM base/archlinux:latest
 
 RUN pacman  --needed  --noconfirm -Sy archlinux-keyring && \
     pacman-key --populate archlinux && \
-    pacman -Syy  && pacman -S --needed --noconfirm --quiet libx264 mesa-libgl transmission-cli libmediainfo mediainfo geoip geoip-database bind-tools openvpn git jre8-openjdk fontconfig chromaprint sudo xz gzip binutils unzip unrar grep fakeroot file cron java-openjfx wget vim iputils net-tools supervisor procps-ng mlocate which inotify-tools awk &&\
-    paccache -r && pacman -Scc
+    echo "PKGEXT='.pkg.tar'" >> /etc/makepkg.conf && echo "SRCEXT='.src.tar'" >> /etc/makepkg.conf &&\
+    pacman -Syy  && pacman -S --needed --noconfirm --quiet awk base-devel bc bind-tools binutils chromaprint cron cronie fakeroot file fontconfig geoip geoip-database git grep gzip inotify-tools iproute iputils libmediainfo libx264 mediainfo mesa-libgl mlocate net-tools openvpn procps-ng sudo supervisor transmission-cli unrar unzip vim wget which xz yajl &&\
+    paccache -ruk0 && pacman -Scc --noconfirm && rm -rf /var/cache/pacman/pkg/* 
 # Filebot is an AUR package and must be installed with non-root user. See below after USER command
 
 ##Entry point
@@ -40,7 +41,10 @@ RUN rmdir /opt && useradd watcher -Umd /opt -s /bin/bash && sudo sh -c "echo \"w
 
 USER watcher
 
-RUN cd /tmp &&  git clone https://aur.archlinux.org/filebot.git && cd filebot && makepkg -src && sudo pacman -U --noconfirm filebot*-`uname -m`.pkg.tar.xz
+RUN cd /tmp && git clone https://aur.archlinux.org/package-query.git && cd package-query && makepkg -si --noconfirm &&\
+	cd /tmp && git clone https://aur.archlinux.org/yaourt.git && cd yaourt && makepkg -si --noconfirm &&\
+	yaourt -S --noconfirm filebot47 &&\
+	sudo paccache -ruk0 && sudo pacman -Scc --noconfirm && yaourt -Scc --noconfirm && sudo rm -rf /var/cache/pacman/pkg/* /tmp/*
 
 WORKDIR /opt/
 COPY torrentwatcher.sh /opt/torrentwatcher/torrentwatcher.sh
@@ -54,7 +58,7 @@ COPY .dropbox_uploader /opt/.dropbox_uploader
 #COPY or ADD do not honor USER, so we must chown everything (should we change to Rocker?) 
 RUN sudo ln -s /opt/torrentwatcher.ini /etc/supervisor.d/torrent.ini &&\
     sudo /usr/local/bin/geoipupdate.sh &&\
-    wget static.inquant.de/bashrc -O ~/.bashrc && \
+    wget static.pandiloko.com/bashrc -O ~/.bashrc && \
     sudo chown -R watcher:watcher /opt/ && \
     cd /opt/vpn &&  l=( *ovpn ) && cp ${l[0]} user.ovpn  && \
     mkdir -p /opt/torrentwatcher/var/log/  && \
