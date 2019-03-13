@@ -11,4 +11,4 @@ Desktop.ini
 $RECYCLE.BIN/
 *.lnk
 .Trash-*
-/docker
+/data
