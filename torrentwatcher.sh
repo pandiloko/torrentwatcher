@@ -53,7 +53,7 @@ VPN_EXT=0
 
 export PATH="/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/root/bin"
 
-VERSION="1.0-raging_Togusa"
+VERSION="2.1-coldblooded_Saito"
 LICENSE="Copyright (C) `date '+%Y'` Licensed under GPLv3
 torrentwatcher comes with ABSOLUTELY NO WARRANTY.  This is free software, and you
 are welcome to redistribute it under certain conditions.  See the GNU
@@ -333,13 +333,13 @@ process_torrent_queue (){
 #   - move to temporary folder when "rad". Delete timebased
 ###############################################################################
 
-    for id in `transmission-remote -l|sed -e '1d;$d;'|grep "100%"| tr -s ' '| cut -f2 -d ' ' | grep -Eo '[0-9]+'`
+    for id in `transmission-remote -l||grep -oP '\K\d+(?= \s+100%)'`
     do
         # Copy infos into properly named lowercased variables
         extract_info $id
         if [[ "$location" -ef "$INCOMING_MEDIA_FOLDER" ]] ; then
-            process_torrent
             logger "Processing torrent with ID: $id. $state"
+            process_torrent
             case $state in
                 Stopped|Finished)
                     logger "Archiving torrent with status $state"
@@ -410,10 +410,12 @@ srv(){
     else
         #We are in some major distro with systemd
         case $2 in 
-            start|stop|restart|status)
+            start|stop|restart)
                 sudo systemctl $2 $1
                 return
                 ;;
+            status)
+            	sudo systemctl is-active $1
             *)
                 return 1
                 ;;
@@ -437,7 +439,7 @@ check_vpn(){
     if [ $vpn == $VPN_OK ]
         then
         logger "Geolocated in Country: $vpn"
-        if srv transmission status | grep -q STOPPED ;then  srv transmission start; fi
+        if srv transmission status | grep -iwq 'STOPPED\|inactive' ;then  srv transmission start; fi
         if [ $VPN_EXT -eq 0 ]; then srv openvpn status ; fi
     else
         logger "We are not in VPN!! Country: $vpn"

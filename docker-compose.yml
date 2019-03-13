@@ -1,9 +1,6 @@
 version: "3"
 services:
   tw:
-
-    build:
-      context: ./
     image: torrentwatcher
     container_name: tw
     environment:
@@ -13,6 +10,6 @@ services:
       - "9091:9091"
 
     volumes:
-      - ./docker/:/opt
+      - ./data/:/opt/
       - /drako/:/drako/
 
