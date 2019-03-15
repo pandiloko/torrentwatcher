@@ -24,36 +24,37 @@ __root="$(cd "$(dirname "${__dir}")" && pwd)"
 #seconds to delete an idle torrent (259200 seconds = 3 days)
 idleTTL=259200
 
-LOGFILE="$__dir/var/log/torrentwatcher.log"
-LOGFILEBOT="$__dir/var/log/filebot.log"
-PIDFILE="$__dir/var/run/torrentwatcher.pid"
+LOGFILE="$__dir/log/torrentwatcher.log"
+LOGFILEBOT="$__dir/log/filebot.log"
+PIDFILE="$__dir/run/torrentwatcher.pid"
 
 INCOMPLETE_FOLDER="$__dir/incomplete/"
 WATCH_MEDIA_FOLDER="$__dir/watch/media/"
 WATCH_OTHER_FOLDER="$__dir/watch/other/"
 
-INCOMING_MEDIA_FOLDER="$__dir/media/"
-INCOMING_OTHER_FOLDER="$__dir/other/"
+INCOMING_MEDIA_FOLDER="$__dir/media"
+INCOMING_OTHER_FOLDER="$__dir/other"
 
-OUTPUT_MOVIES_FOLDER="$__dir/archive/movies/"
-OUTPUT_TVSHOWS_FOLDER="$__dir/archive/tvshows/"
+#Plex preset creates separate folders
+OUTPUT_MOVIES_FOLDER="$__dir/archive/"
+OUTPUT_TVSHOWS_FOLDER="$__dir/archive/"
 
-CLOUD_MEDIA_FOLDER="/tw/launching-media/"
-CLOUD_OTHER_FOLDER="/tw/launching-other/"
+CLOUD_MEDIA_FOLDER="/tw/launching-media"
+CLOUD_OTHER_FOLDER="/tw/launching-other"
 
 FILEBOT_CMD=`type -p filebot` || FILEBOT_CMD="/opt/filebot/filebot.sh"
-FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER{y} {n} [{rating}]/{n} - {y} - {genres} {group}"
-FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t} {group}"
-FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}"
+FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER/{plex}"
+FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER/{plex}"
+FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDER/{plex}"
 
 CLOUD_CMD=$(type -p rclone)
 
 VPN_OK=NL
-VPN_EXT=0
+VPN_EXT=1
 
 export PATH="/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/root/bin"
 
-VERSION="1.0-raging_Togusa"
+VERSION="2.0-coldblooded_Saito"
 LICENSE="Copyright (C) `date '+%Y'` Licensed under GPLv3
 torrentwatcher comes with ABSOLUTELY NO WARRANTY.  This is free software, and you
 are welcome to redistribute it under certain conditions.  See the GNU
@@ -453,7 +454,7 @@ cloud_list_parsable_torrents(){
 	#dropbox_downloader
 	#$CLOUD_CMD list "$1" | tr -s " " | cut -d " " -f4-|grep -E "\.torrent$"
 	#rclone
-	$CLOUD_CMD lsf "cloud:$1"
+	$CLOUD_CMD lsf "cloud:$1" | grep torrent$
 }
 cloud_delete(){
 	$CLOUD_CMD deletefile "cloud:$1"
@@ -500,6 +501,7 @@ cloud_monitor () {
             cloud_download "$CLOUD_OTHER_FOLDER/$i" $PWD >> $LOGFILE 2>&1 && cloud_delete "$CLOUD_OTHER_FOLDER/$i" >> $LOGFILE 2>&1
         done
         IFS=$oIFS
+	sleep 60
     done
 }
 
