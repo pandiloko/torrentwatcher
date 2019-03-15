@@ -1,16 +1,30 @@
-FROM base/archlinux:latest
-
+FROM archlinux/base
 ##Install packages
 #########################
 #RUN pacman -Syyuw --noconfirm
 #RUN rm /etc/ssl/certs/ca-certificates.crt && pacman -Syyu --noconfirm --quiet 
 
-RUN pacman  --needed  --noconfirm -Sy archlinux-keyring && \
-    pacman-key --populate archlinux && \
-    echo "PKGEXT='.pkg.tar'" >> /etc/makepkg.conf && echo "SRCEXT='.src.tar'" >> /etc/makepkg.conf &&\
-    pacman -Syy  && pacman -S --needed --noconfirm --quiet awk base-devel bc bind-tools binutils chromaprint cron cronie fakeroot file fontconfig geoip geoip-database git grep gzip inotify-tools iproute iputils libmediainfo libx264 mediainfo mesa-libgl mlocate net-tools openvpn procps-ng sudo supervisor transmission-cli unrar unzip vim wget which xz yajl &&\
-    paccache -ruk0 && pacman -Scc --noconfirm && rm -rf /var/cache/pacman/pkg/* 
+RUN pacman  --needed  --noconfirm -Sy archlinux-keyring gnupg && \
+    pacman-key --refresh-keys ;\
+    pacman-key --populate archlinux ;\
+    echo "PKGEXT='.pkg.tar'" >> /etc/makepkg.conf && echo "SRCEXT='.src.tar'" >> /etc/makepkg.conf
+RUN    pacman -Syy  && pacman -S --needed --noconfirm --quiet awk base-devel bc bind-tools binutils chromaprint cron cronie fakeroot file fontconfig git grep gzip inotify-tools iproute iputils jq libmediainfo libx264 mediainfo mesa-libgl mlocate mmdblookup net-tools pacman-contrib procps-ng sudo supervisor transmission-cli unrar unzip vim wget which xz yajl
 # Filebot is an AUR package and must be installed with non-root user. See below after USER command
+
+##Network
+#########################
+#Expose transmission web interface and p2p ports
+EXPOSE 9091 51413/tcp 51413/udp
+# RUN echo 'OPTARGS="--log-append /opt/torrentwatcher/log/openvpn.log"' >> /etc/default/openvpn
+# RUN echo 'net.core.rmem_max = 16777216' >> /etc/sysctl.d/99-sysctl.conf
+# RUN echo 'net.core.wmem_max = 4194304' >> /etc/sysctl.d/99-sysctl.conf
+
+##Everything else
+#########################
+
+RUN rmdir /opt && useradd watcher -Umd /opt -s /bin/bash && sudo sh -c "echo \"watcher ALL=(ALL) NOPASSWD:ALL\" >> /etc/sudoers" &&\
+    echo "@daily /opt/GeoIP/geoipupdate -f /opt/GeoIP/GeoIP.conf" >> /var/spool/cron/root && \
+    echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && echo LANG=en_US.UTF-8 >> /etc/locale.conf && locale-gen
 
 ##Entry point
 #########################
@@ -21,37 +35,24 @@ RUN chmod 755 /entrypoint.sh
 # See at the end of this file for more details
 ENTRYPOINT ["/entrypoint.sh"]
 
-##Network
-#########################
-#Expose transmission web interface and p2p ports
-EXPOSE 9091 51413/tcp 51413/udp
-RUN echo 'OPTARGS="--log-append /opt/torrentwatcher/log/openvpn.log"' >> /etc/default/openvpn
-# RUN echo 'net.core.rmem_max = 16777216' >> /etc/sysctl.d/99-sysctl.conf
-# RUN echo 'net.core.wmem_max = 4194304' >> /etc/sysctl.d/99-sysctl.conf
-
-
-##Everything else
-#########################
-RUN rmdir /opt && useradd watcher -Umd /opt -s /bin/bash && sudo sh -c "echo \"watcher ALL=(ALL) NOPASSWD:ALL\" >> /etc/sudoers" &&\
-    echo "@daily /usr/local/bin/geoipupdate.sh" >> /var/spool/cron/root && \
-    echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && echo LANG=en_US.UTF-8 >> /etc/locale.conf && locale-gen
-
 USER watcher
 
 RUN cd /tmp && git clone https://aur.archlinux.org/package-query.git && cd package-query && makepkg -si --noconfirm &&\
 	cd /tmp && git clone https://aur.archlinux.org/yaourt.git && cd yaourt && makepkg -si --noconfirm &&\
 	yaourt -S --noconfirm filebot47 &&\
-	sudo paccache -ruk0 && sudo pacman -Scc --noconfirm && yaourt -Scc --noconfirm && sudo rm -rf /var/cache/pacman/pkg/* /tmp/*
+	sudo pacman -Scc --noconfirm && yaourt -Scc --noconfirm  && rm -rf /tmp/*
 
 WORKDIR /opt/
 RUN git clone https://github.com/pandiloko/torrentwatcher.git &&\
-	ln -s /opt/torrentwatcher/geoipupdate.sh /usr/local/bin/geoipupdate.sh
+    sudo ln -s /opt/torrentwatcher/geoipupdate.sh /usr/local/bin/geoipupdate.sh &&\
+    wget $(wget https://api.github.com/repos/maxmind/geoipupdate/releases/latest -qO - | jq -r '.assets[] | select (.browser_download_url | contains("linux_amd64.tar.gz")).browser_download_url') &&\
+    tar -zxvf geoipupdate*linux_amd64.tar.gz && rm geoipupdate*linux_amd64.tar.gz &&\
+    mv geoipupdate* GeoIP && echo "DatabaseDirectory /opt/GeoIP" >> GeoIP/GeoIP.conf
 
 RUN sudo ln -s /opt/torrentwatcher.ini /etc/supervisor.d/torrent.ini &&\
-    sudo /usr/local/bin/geoipupdate.sh &&\
+    /opt/GeoIP/geoipupdate -f /opt/GeoIP/GeoIP.conf &&\
     wget static.pandiloko.com/bashrc -O ~/.bashrc && \
     sudo chown -R watcher:watcher /opt/ && \
-    cd /opt/vpn &&  l=( *ovpn ) && cp ${l[0]} user.ovpn  && \
     mkdir -p /opt/torrentwatcher/log/  && \
     TZ=${TZ_HOST:-"/usr/share/zoneinfo/Europe/Berlin"} && \
     sudo updatedb
