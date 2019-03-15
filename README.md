@@ -20,7 +20,7 @@ This project tries to address the following problems:
 Bash is my hammer and everything seems to be a nail waiting to be hammered with my bash-hammer. The polite excuse here could be that I wanted it to work on as many systems as possible without too many installation hassle i.e. Python and its versions/modules/packages, C libraries and compiling problems or PHP/Perl modules for example. 
 
 ### What it does
-It relies on transmission as a torrent client, Dropbox and dropbox_uploader to add torrents on the go, filebot for renaming and classifying, telegram-bash-bot for notifications and of course bash.
+It relies on transmission as a torrent client, rclone and your preferred cloud service to add torrents on the go, filebot for renaming and classifying, telegram-bash-bot for notifications and of course bash.
 
 This is how the data flows:
  - Out of a sudden someone talks to you about this great movie: "Braineaters Olympics" You go to your torrentz2.eu or wherever you look for torrents 
