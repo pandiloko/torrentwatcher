@@ -24,36 +24,37 @@ __root="$(cd "$(dirname "${__dir}")" && pwd)"
 #seconds to delete an idle torrent (259200 seconds = 3 days)
 idleTTL=259200
 
-LOGFILE="$__dir/var/log/torrentwatcher.log"
-LOGFILEBOT="$__dir/var/log/filebot.log"
-PIDFILE="$__dir/var/run/torrentwatcher.pid"
+LOGFILE="$__dir/log/torrentwatcher.log"
+LOGFILEBOT="$__dir/log/filebot.log"
+PIDFILE="$__dir/run/torrentwatcher.pid"
 
 INCOMPLETE_FOLDER="$__dir/incomplete/"
 WATCH_MEDIA_FOLDER="$__dir/watch/media/"
 WATCH_OTHER_FOLDER="$__dir/watch/other/"
 
-INCOMING_MEDIA_FOLDER="$__dir/media/"
-INCOMING_OTHER_FOLDER="$__dir/other/"
+INCOMING_MEDIA_FOLDER="$__dir/media"
+INCOMING_OTHER_FOLDER="$__dir/other"
 
-OUTPUT_MOVIES_FOLDER="$__dir/archive/movies/"
-OUTPUT_TVSHOWS_FOLDER="$__dir/archive/tvshows/"
+#Plex preset creates separate folders
+OUTPUT_MOVIES_FOLDER="$__dir/archive/"
+OUTPUT_TVSHOWS_FOLDER="$__dir/archive/"
 
-CLOUD_MEDIA_FOLDER="/launching-media/"
-CLOUD_OTHER_FOLDER="/launching-other/"
+CLOUD_MEDIA_FOLDER="/tw/launching-media"
+CLOUD_OTHER_FOLDER="/tw/launching-other"
 
 FILEBOT_CMD=`type -p filebot` || FILEBOT_CMD="/opt/filebot/filebot.sh"
-FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER{y} {n} [{rating}]/{n} - {y} - {genres} {group}"
-FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t} {group}"
-FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}"
+FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER/{plex}"
+FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER/{plex}"
+FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDER/{plex}"
 
-CLOUD_CMD=`type -p dropbox_uploader.sh` || CLOUD_CMD="/opt/dbox/dropbox_uploader.sh"
+CLOUD_CMD=$(type -p rclone)
 
 VPN_OK=NL
-VPN_EXT=0
+VPN_EXT=1
 
 export PATH="/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/root/bin"
 
-VERSION="2.1-coldblooded_Saito"
+VERSION="2.0-coldblooded_Saito"
 LICENSE="Copyright (C) `date '+%Y'` Licensed under GPLv3
 torrentwatcher comes with ABSOLUTELY NO WARRANTY.  This is free software, and you
 are welcome to redistribute it under certain conditions.  See the GNU
@@ -333,13 +334,13 @@ process_torrent_queue (){
 #   - move to temporary folder when "rad". Delete timebased
 ###############################################################################
 
-    for id in `transmission-remote -l||grep -oP '\K\d+(?= \s+100%)'`
+    for id in `transmission-remote -l|sed -e '1d;$d;'|grep "100%"| tr -s ' '| cut -f2 -d ' ' | grep -Eo '[0-9]+'`
     do
         # Copy infos into properly named lowercased variables
         extract_info $id
         if [[ "$location" -ef "$INCOMING_MEDIA_FOLDER" ]] ; then
-            logger "Processing torrent with ID: $id. $state"
             process_torrent
+            logger "Processing torrent with ID: $id. $state"
             case $state in
                 Stopped|Finished)
                     logger "Archiving torrent with status $state"
@@ -410,12 +411,10 @@ srv(){
     else
         #We are in some major distro with systemd
         case $2 in 
-            start|stop|restart)
+            start|stop|restart|status)
                 sudo systemctl $2 $1
                 return
                 ;;
-            status)
-            	sudo systemctl is-active $1
             *)
                 return 1
                 ;;
@@ -434,12 +433,11 @@ check_vpn(){
 # Alternative and arguably better method with dig is now used
 ###############################################################################
     myip=`dig +short myip.opendns.com @resolver1.opendns.com`
-    vpn=`geoiplookup $myip | cut -d":" -f2 | cut -d"," -f1 | tr -d " "`
-
+    vpn=`mmdblookup --file /usr/local/share/GeoIP/GeoLite2-Country.mmdb --ip 80.60.233.195 country iso_code| grep '"'| grep -oP '\s+"\K\w+'`
     if [ $vpn == $VPN_OK ]
         then
         logger "Geolocated in Country: $vpn"
-        if srv transmission status | grep -iwq 'STOPPED\|inactive' ;then  srv transmission start; fi
+        if srv transmission status | grep -q STOPPED ;then  srv transmission start; fi
         if [ $VPN_EXT -eq 0 ]; then srv openvpn status ; fi
     else
         logger "We are not in VPN!! Country: $vpn"
@@ -452,6 +450,21 @@ check_vpn(){
     fi
 }
 
+cloud_list_parsable_torrents(){
+	#dropbox_downloader
+	#$CLOUD_CMD list "$1" | tr -s " " | cut -d " " -f4-|grep -E "\.torrent$"
+	#rclone
+	$CLOUD_CMD lsf "cloud:$1" | grep torrent$
+}
+cloud_delete(){
+	$CLOUD_CMD deletefile "cloud:$1"
+	return $?
+}
+cloud_download(){
+	$CLOUD_CMD copy "cloud:$1" "$2"
+	return $?
+}
+
 cloud_monitor () {
 # Waits for changes in cloud folders
 # Downloads ONLY .torrent files to watch folders, deleting from cloud if download is successful
@@ -460,30 +473,35 @@ cloud_monitor () {
     while true
     do
         # Monitor folders for changes
-        pids=""
-        $CLOUD_CMD monitor $CLOUD_MEDIA_FOLDER 60 >> $LOGFILE 2>&1 &
-        pids="$pids $!"
-        $CLOUD_CMD monitor $CLOUD_OTHER_FOLDER 60 >> $LOGFILE 2>&1 &
-        pids="$pids $!"
-        for pid in $pids; do
-            wait $pid
-        done
+        #pids=""
+        #$CLOUD_CMD monitor $CLOUD_MEDIA_FOLDER 60 >> $LOGFILE 2>&1 &
+        #pids="$pids $!"
+        #$CLOUD_CMD monitor $CLOUD_OTHER_FOLDER 60 >> $LOGFILE 2>&1 &
+        #pids="$pids $!"
+        #for pid in $pids; do
+        #    wait $pid
+        #done
+	
+	# Monitor mode was cool but rclone does not support it
+	# TODO: test if mount is reliable enough
         #Download files
         oIFS=$IFS
         IFS=$'\n'
         cd $WATCH_MEDIA_FOLDER
-        for i in `$CLOUD_CMD list "$CLOUD_MEDIA_FOLDER" | tr -s " " | cut -d " " -f4-|grep -E "\.torrent$"`; do
+	for i in $(cloud_list_parsable_torrents $CLOUD_MEDIA_FOLDER); do
             logger "Processing file: $i"
             # Download but do not delete if download fails
-            $CLOUD_CMD download "$CLOUD_MEDIA_FOLDER$i" >> $LOGFILE 2>&1 && $CLOUD_CMD delete "$CLOUD_MEDIA_FOLDER$i" >> $LOGFILE 2>&1
+            cloud_download "$CLOUD_MEDIA_FOLDER/$i" $PWD >> $LOGFILE 2>&1 && cloud_delete "$CLOUD_MEDIA_FOLDER/$i" >> $LOGFILE 2>&1
+
         done
         cd $WATCH_OTHER_FOLDER
-        for i in `$CLOUD_CMD list "$CLOUD_OTHER_FOLDER" | tr -s " " | cut -d" " -f4-|grep -E "\.torrent$"`; do
+	for i in $(cloud_list_parsable_torrents $CLOUD_OTHER_FOLDER); do
             logger "Processing file: $i"
             # Download but do not delete if download fails
-            $CLOUD_CMD download "$CLOUD_OTHER_FOLDER$i" >> $LOGFILE 2>&1 && $CLOUD_CMD delete "$CLOUD_OTHER_FOLDER$i" >> $LOGFILE 2>&1
+            cloud_download "$CLOUD_OTHER_FOLDER/$i" $PWD >> $LOGFILE 2>&1 && cloud_delete "$CLOUD_OTHER_FOLDER/$i" >> $LOGFILE 2>&1
         done
         IFS=$oIFS
+	sleep 60
     done
 }
 
