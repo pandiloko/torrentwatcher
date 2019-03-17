@@ -1,13 +1,13 @@
 version: "3"
 services:
   tw:
-    image: torrentwatcher
-    container_name: tw
+    image: tw
+    container_name: twtest
     environment:
       - UID=99
       - GROUPS=99
     ports:
-      - "9091:9091"
+      - "9092:9091"
 
     volumes:
       - ./data/:/opt/

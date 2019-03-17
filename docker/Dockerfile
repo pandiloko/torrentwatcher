@@ -44,6 +44,7 @@ RUN cd /tmp && git clone https://aur.archlinux.org/package-query.git && cd packa
 
 WORKDIR /opt/
 RUN git clone https://github.com/pandiloko/torrentwatcher.git &&\
+    cd /opt/torrentwatcher && git checkout coldblooded && cd - &&\
     sudo ln -s /opt/torrentwatcher/geoipupdate.sh /usr/local/bin/geoipupdate.sh &&\
     wget $(wget https://api.github.com/repos/maxmind/geoipupdate/releases/latest -qO - | jq -r '.assets[] | select (.browser_download_url | contains("linux_amd64.tar.gz")).browser_download_url') &&\
     tar -zxvf geoipupdate*linux_amd64.tar.gz && rm geoipupdate*linux_amd64.tar.gz &&\
