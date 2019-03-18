@@ -13,8 +13,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+set -x
+exec > /tmp/tw-debug.log
+exec 2>&1
+
 mypid=$$
-OPTS=`getopt -o v:h:f: --long file:,log:,log-filebot:,watch:,watch-other:,incoming:,incoming-other:,output-movies:,output-tvshows:,cloud:,cloud-other:,filebot-cmd:,cloud-cmd:,vpn:,no-vpn,verbose,help,version -n 'parse-options' -- "$@"`
+OPTS=`getopt -o v:h:f:d: --long file:,log:,log-filebot:,watch:,watch-other:,incoming:,incoming-other:,output-movies:,output-tvshows:,cloud:,cloud-other:,filebot-cmd:,cloud-cmd:,daemon:,vpn:,no-vpn,verbose,help,version -n 'parse-options' -- "$@"`
 
 __dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 __file="${__dir}/$(basename "${BASH_SOURCE[0]}")"
@@ -116,7 +120,7 @@ readconfig(){
     echo "Readed options from file $tmpfile:"
     cat $tmpfile
     # Ask only if we are interactive
-    if [ ! -v PS1 ] ; then
+    if [ ! -z PS1 ] ; then
 	    while true; do
 	        read -p "Do you want to continue? y / n: " yn
 	        case $yn in
@@ -144,6 +148,7 @@ readopts(){
       case "$1" in
         -v | --verbose ) VERBOSE=true; shift ;;
         -h | --help ) help; exit 0 ;;
+        -d | --daemon) DAEMON=true; shift ;;
         -f | --file )
             CONFIG_FILE=$2
             readconfig
@@ -196,7 +201,7 @@ Folders
  - Cloud remote other: $CLOUD_OTHER_FOLDER
 "
         # Ask only if we are interactive, else just try to create
-        if [ ! -v PS1 ] ; then
+        if [ ! -z PS1 ] ; then
             while true; do
                 read -p "Should I try to create the missing folders? y / n: " yn
                 case $yn in
