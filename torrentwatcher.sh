@@ -440,7 +440,8 @@ check_vpn(){
 # Alternative and arguably better method with dig is now used
 ###############################################################################
     myip=`dig +short myip.opendns.com @resolver1.opendns.com`
-    vpn=`mmdblookup --file /usr/local/share/GeoIP/GeoLite2-Country.mmdb --ip 80.60.233.195 country iso_code| grep '"'| grep -oP '\s+"\K\w+'`
+    # vpn=`mmdblookup --file /opt/GeoIP/GeoLite2-Country.mmdb --ip 80.60.233.195 country iso_code| grep '"'| grep -oP '\s+"\K\w+'`
+    vpn=`mmdblookup --file /opt/GeoIP/GeoLite2-Country.mmdb --ip $myip country iso_code| grep '"'| grep -oP '\s+"\K\w+'`
     if [ $vpn == $VPN_OK ]
         then
         logger "Geolocated in Country: $vpn"
