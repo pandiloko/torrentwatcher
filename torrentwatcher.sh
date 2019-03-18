@@ -107,17 +107,24 @@ Unknown option or incorrect syntax. Try ussing -h,--help option
 }
 
 readconfig(){
-    ( [ -e $CONFIG_FILE ] && [ -f $CONFIG_FILE ] && [ -s $CONFIG_FILE ] ) || exit 1
+    # -e file exists
+    # -f file is a regular file (not a directory or device file)
+    # -s file is not zero size
+    ( [ -e $CONFIG_FILE ] && [ -f $CONFIG_FILE ] && [ -s $CONFIG_FILE ] ) || { echo Config file $CONFIG_FILE not found ; exit 1 ;}
     tmpfile=$(mktemp /tmp/torrentwatcher.XXXXXX)
-    grep -Ei '^[ ]*[a-z]+=[^[;,`()%$!#]+[ ]*$' $CONFIG_FILE > $tmpfile
+    grep -Ei '^[[:space:]]*[a-z]+=[^[;,`()%$!#]+[[:space:]]*$' $CONFIG_FILE > $tmpfile
     echo "Readed options from file $tmpfile:"
     cat $tmpfile
 
     while true; do
         read -p "Do you want to continue? [Y] / n" yn
         case $yn in
-            [Yy] ) break;;
-            [Nn] ) exit 1;;
+            [Yy] )
+                source $tmpfile
+                break;;
+            [Nn] )
+                echo User cancelled
+                exit 1;;
             * ) echo "Please answer with y or n.";;
         esac
     done
@@ -160,9 +167,7 @@ readopts(){
     done
 }
 
-
 check_environment(){
-
     [ -x "$FILEBOT_CMD" ] || { echo -en "Check the binaries:\n - Filebot: $FILEBOT_CMD \n" && exit 1; }
     [ -x "$CLOUD_CMD" ] || { echo -en "Check the binaries:\n - Cloud: $CLOUD_CMD\n" && exit 1; }
 
