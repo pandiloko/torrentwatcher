@@ -298,7 +298,7 @@ extract_info () {
 }
 
 add_torrents (){
-
+        shopt -u | grep -q nocasematch && local ch_nocasematch=true && shopt -s nocasematch
         transmission-remote -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1
         for i in ${WATCH_MEDIA_FOLDER}*.torrent ; do
             logger "Adding media torrents: $i"
@@ -309,6 +309,18 @@ add_torrents (){
             transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1 && mv "$i" "$i.added"
         done
 
+        if [ -e ${WATCH_OTHER_FOLDER}magnet.txt ]; then
+        logger "Processing magnet file"
+            (
+            while IFS='' read -r i || [[ -n "$line" ]]; do
+                        transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1 && echo  "$i" "${WATCH_OTHER_FOLDER}magn
+            echo "Text read from file: $line"
+            done < "${WATCH_OTHER_FOLDER}magnet.txt"
+            )
+            rm -f "${WATCH_OTHER_FOLDER}magnet.txt"
+        fi
+
+        [ $ch_nocasematch ] && shopt -u nocasematch; unset ch_nocasematch
 }
 filebot_command(){
 # parameters:
