@@ -14,7 +14,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 mypid=$$
-OPTS=`getopt -o vhf --long file:,log:,log-filebot:,watch:,watch-other:,incoming:,incoming-other:,output-movies:,output-tvshows:,cloud:,cloud-other:,filebot-cmd:,cloud-cmd:,vpn:,no-vpn,verbose,help,version -n 'parse-options' -- "$@"`
+OPTS=`getopt -o v:h:f: --long file:,log:,log-filebot:,watch:,watch-other:,incoming:,incoming-other:,output-movies:,output-tvshows:,cloud:,cloud-other:,filebot-cmd:,cloud-cmd:,vpn:,no-vpn,verbose,help,version -n 'parse-options' -- "$@"`
 
 __dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 __file="${__dir}/$(basename "${BASH_SOURCE[0]}")"
@@ -111,23 +111,27 @@ readconfig(){
     # -f file is a regular file (not a directory or device file)
     # -s file is not zero size
     ( [ -e $CONFIG_FILE ] && [ -f $CONFIG_FILE ] && [ -s $CONFIG_FILE ] ) || { echo Config file $CONFIG_FILE not found ; exit 1 ;}
-    tmpfile=$(mktemp /tmp/torrentwatcher.XXXXXX)
-    grep -Ei '^[[:space:]]*[a-z]+=[^[;,`()%$!#]+[[:space:]]*$' $CONFIG_FILE > $tmpfile
+    local tmpfile=$(mktemp /tmp/torrentwatcher.XXXXXX)
+    grep -Ei '^[[:space:]]*[a-z_.-]+=[^[;,`()%$!#]+[[:space:]]*$' $CONFIG_FILE > $tmpfile
     echo "Readed options from file $tmpfile:"
     cat $tmpfile
-
-    while true; do
-        read -p "Do you want to continue? [Y] / n" yn
-        case $yn in
-            [Yy] )
-                source $tmpfile
-                break;;
-            [Nn] )
-                echo User cancelled
-                exit 1;;
-            * ) echo "Please answer with y or n.";;
-        esac
-    done
+    # Ask only if we are interactive
+    if [ ! -v PS1 ] ; then
+	    while true; do
+	        read -p "Do you want to continue? y / n: " yn
+	        case $yn in
+	            [Yy] )
+	                source $tmpfile
+	                break;;
+	            [Nn] )
+	                echo User cancelled
+	                exit 1;;
+	            * ) echo "Please answer with y or n.";;
+	        esac
+	    done
+	else
+		source $CONFIG_FILE
+    fi
     rm -f $tmpfile
 }
 
@@ -136,7 +140,6 @@ readopts(){
     eval set -- "$OPTS"
     
     if [ $? != 0 ] ; then echo "Failed parsing options." >&2 ; exit 1 ; fi
-
     while true; do
       case "$1" in
         -v | --verbose ) VERBOSE=true; shift ;;
@@ -212,10 +215,9 @@ Folders
             mkdir -p `dirname "$LOGFILE"` `dirname "$LOGFILEBOT"` $INCOMING_MEDIA_FOLDER  $INCOMING_OTHER_FOLDER $OUTPUT_MOVIES_FOLDER $OUTPUT_TVSHOWS_FOLDER $WATCH_MEDIA_FOLDER  $WATCH_OTHER_FOLDER $INCOMPLETE_FOLDER||  exit 1
         fi
     fi
-
-    FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER{y} {n} [{rating}]/{n} - {y} - {genres} {group}"
-    FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t} {group}"
-    FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}"
+    # FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER{y} {n} [{rating}]/{n} - {y} - {genres} {group}"
+    # FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t} {group}"
+    # FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}"
 }
 
 #setsid myscript.sh >/dev/null 2>&1 < /dev/null &
