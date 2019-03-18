@@ -8,7 +8,7 @@ RUN pacman  --needed  --noconfirm -Sy archlinux-keyring gnupg && \
     pacman-key --refresh-keys ;\
     pacman-key --populate archlinux ;\
     echo "PKGEXT='.pkg.tar'" >> /etc/makepkg.conf && echo "SRCEXT='.src.tar'" >> /etc/makepkg.conf
-RUN    pacman -Syy  && pacman -S --needed --noconfirm --quiet awk base-devel bc bind-tools binutils chromaprint cron cronie fakeroot file fontconfig git grep gzip inotify-tools iproute iputils jq libmediainfo libx264 mediainfo mesa-libgl mlocate mmdblookup net-tools pacman-contrib procps-ng sudo supervisor transmission-cli unrar unzip vim wget which xz yajl
+RUN    pacman -Syy  && pacman -S --needed --noconfirm --quiet awk base-devel bc bind-tools binutils chromaprint cron cronie fakeroot file fontconfig git grep gzip inotify-tools iproute iputils jq libmediainfo libx264 mediainfo mesa-libgl mlocate mmdblookup net-tools pacman-contrib procps-ng rclone sudo supervisor transmission-cli unrar unzip vim wget which xz yajl
 # Filebot is an AUR package and must be installed with non-root user. See below after USER command
 
 ##Network
@@ -24,7 +24,8 @@ EXPOSE 9091 51413/tcp 51413/udp
 
 RUN rmdir /opt && useradd watcher -Umd /opt -s /bin/bash && sudo sh -c "echo \"watcher ALL=(ALL) NOPASSWD:ALL\" >> /etc/sudoers" &&\
     echo "@daily /opt/GeoIP/geoipupdate -f /opt/GeoIP/GeoIP.conf" >> /var/spool/cron/root && \
-    echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && echo LANG=en_US.UTF-8 >> /etc/locale.conf && locale-gen
+    echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && echo LANG=en_US.UTF-8 >> /etc/locale.conf && locale-gen &&\
+    ln -sf /usr/share/zoneinfo/Europe/Berlin /etc/localtime
 
 ##Entry point
 #########################
@@ -50,7 +51,7 @@ RUN git clone https://github.com/pandiloko/torrentwatcher.git &&\
     tar -zxvf geoipupdate*linux_amd64.tar.gz && rm geoipupdate*linux_amd64.tar.gz &&\
     mv geoipupdate* GeoIP && echo "DatabaseDirectory /opt/GeoIP" >> GeoIP/GeoIP.conf
 
-RUN sudo ln -s /opt/torrentwatcher.ini /etc/supervisor.d/torrent.ini &&\
+RUN sudo ln -s /opt/torrentwatcher/torrentwatcher.ini /etc/supervisor.d/torrent.ini &&\
     /opt/GeoIP/geoipupdate -f /opt/GeoIP/GeoIP.conf &&\
     wget static.pandiloko.com/bashrc -O ~/.bashrc && \
     sudo chown -R watcher:watcher /opt/ && \
