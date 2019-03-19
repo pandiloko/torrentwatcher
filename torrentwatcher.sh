@@ -391,6 +391,15 @@ process_torrent_queue (){
                 "Seeding")
                     # Copy but don't delete torrent, we want to keep seeding until ratio is reached
                     logger "Keep seeding, cabrones"
+                    local time_spent=${seeding_time%% seconds)}
+                    time_spent={time_spent##*\(}
+                    if [[ $time_spent >= $idleTTL ]];then
+                        logger "Archiving torrent with status $state and seeding time $seeding_time"
+                        # ensure the files are already copied and remove the torrent+data from Transmission
+                        logger "Removing seeding torrent from list, included data"
+                        echo transmission-remote -t $id -rad >> $LOGFILE 2>&1
+                        # ll /tmp/$hash &> /dev/null && rm -f /tmp/$hash
+                    fi
                 ;;
                 *)
                 ;;
@@ -410,20 +419,25 @@ srv(){
 # then falls back to systemd
 ###############################################################################
 
+	local ret=""
     if [ -f /.dockerenv ]; then
         #We are in container
         case $2 in 
             start|stop|restart|status)
                 sudo supervisorctl $2 $1
-                return
+                return $?
                 ;;
+            status)
+            	ret=$(sudo supervisoctl $2 $1 | grep -w STOPPED)
+            	{ [[ $ret == "STOPPED" ]] && return 1 ;}|| return 0
+            	;;
             *)
                 return 1
                 ;;
         esac
     elif uname -a | grep -i freebsd ; then
         #We are in freebsd
-        case $2 in 
+        case $2 in
             start|stop|restart|status)
                 sudo service $1 $2
                 return
@@ -434,11 +448,15 @@ srv(){
         esac
     else
         #We are in some major distro with systemd
-        case $2 in 
-            start|stop|restart|status)
+        case $2 in
+            start|stop|restart)
                 sudo systemctl $2 $1
-                return
+                return $?
                 ;;
+            status
+            	ret=$(sudo systemctl is-active $1)
+            	return $?
+            	;;
             *)
                 return 1
                 ;;
