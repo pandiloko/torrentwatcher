@@ -120,7 +120,7 @@ readconfig(){
     echo "Readed options from file $tmpfile:"
     cat $tmpfile
     # Ask only if we are interactive
-    if [ ! -z PS1 ] ; then
+    if [ ! -z $PS1 ] ; then
 	    while true; do
 	        read -p "Do you want to continue? y / n: " yn
 	        case $yn in
@@ -201,7 +201,7 @@ Folders
  - Cloud remote other: $CLOUD_OTHER_FOLDER
 "
         # Ask only if we are interactive, else just try to create
-        if [ ! -z PS1 ] ; then
+        if [ ! -z $PS1 ] ; then
             while true; do
                 read -p "Should I try to create the missing folders? y / n: " yn
                 case $yn in
