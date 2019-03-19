@@ -373,32 +373,17 @@ process_torrent_queue (){
                     transmission-remote -t $id -rad >> $LOGFILE 2>&1
                     ll /tmp/$hash &> /dev/null && rm -f /tmp/$hash
                 ;;
-                Idle)
-                    logger "Idle torrent. Checking for how long"
-                    if ll /tmp/$hash &> /dev/null ; then
-                        seconds=$(( `date +%s` - `cat /tmp/$hash` ))
-                        logger "Torrent idle for $seconds seconds. TTL is $idleTTL seconds"
-                        if [ $seconds -gt $idleTTL ] ; then
-                            logger "Removing IDLE torrent from list, included data"
-                            transmission-remote -t $id -rad >> $LOGFILE 2>&1
-                            rm -f /tmp/$hash
-                        fi
-                    else
-                        logger "Just arrived, creating file /tmp/$hash"
-                        date +%s > /tmp/$hash
-                    fi
-                ;;
-                "Seeding")
-                    # Copy but don't delete torrent, we want to keep seeding until ratio is reached
-                    logger "Keep seeding, cabrones"
+                Seeding|Idle)
                     local time_spent=${seeding_time%% seconds)}
                     time_spent={time_spent##*\(}
                     if [[ $time_spent >= $idleTTL ]];then
                         logger "Archiving torrent with status $state and seeding time $seeding_time"
                         # ensure the files are already copied and remove the torrent+data from Transmission
-                        logger "Removing seeding torrent from list, included data"
+                        logger "Removing seeding/idle torrent from list, included data"
                         echo transmission-remote -t $id -rad >> $LOGFILE 2>&1
                         # ll /tmp/$hash &> /dev/null && rm -f /tmp/$hash
+                    else
+                        logger "$time_spent seconds out of $idleTTL: Keep seeding, cabrones!!"
                     fi
                 ;;
                 *)
