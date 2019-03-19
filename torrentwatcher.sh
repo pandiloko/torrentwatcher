@@ -438,7 +438,7 @@ srv(){
                 sudo systemctl $2 $1
                 return $?
                 ;;
-            status
+            status)
             	ret=$(sudo systemctl is-active $1)
             	return $?
             	;;
