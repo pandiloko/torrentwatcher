@@ -333,18 +333,18 @@ filebot_command(){
 #     $2-> src folder
 # Determines if file is alone or in a folder because we don't want to process the whole folder
 ###############################################################################
-    $FILEBOT_CMD -script fn:amc -non-strict --def movieFormat="$FILEBOT_MOVIES_FORMAT" seriesFormat="$FILEBOT_SERIES_FORMAT" animeFormat="$FILEBOT_ANIME_FORMAT" music=n excludeList=$__dir/var/log/amc-exclude.txt subtitles=en --log-file $__dir/var/log/amc.log --conflict auto  --log all --action $1 "$2" >> $LOGFILE 2>&1
+    $FILEBOT_CMD -script fn:amc -non-strict --def movieFormat="$FILEBOT_MOVIES_FORMAT" seriesFormat="$FILEBOT_SERIES_FORMAT" animeFormat="$FILEBOT_ANIME_FORMAT" music=n excludeList=$__dir/log/amc-exclude.txt subtitles=en --log-file $__dir/log/amc.log --conflict auto  --log all --action $1 "$2" >> $LOGFILE 2>&1
     return $?
 }
 
 process_torrent(){
     if [ -d "${INCOMING_MEDIA_FOLDER}/$name" ]; then
-        ls /tmp/filebot-$hash.log || filebot_command copy "${INCOMING_MEDIA_FOLDER}/$name" &> /tmp/filebot-$hash.log
-        if grep  -E 'Failure|java\.io\.IOException' /tmp/filebot-lastrun.log &>/dev/null; then 
-                rsync -rvhP --size-only "${INCOMING_MEDIA_FOLDER}/$name" "$INCOMING_OTHER_FOLDER/misc"
+        [ -f /tmp/filebot-$hash.log ] || filebot_command copy "${INCOMING_MEDIA_FOLDER}/$name" &> /tmp/filebot-$hash.log
+        if grep  -E 'Failure|java\.io\.IOException' /tmp/filebot-$hash.log &>/dev/null; then 
+                echo rsync -rvhP --size-only "${INCOMING_MEDIA_FOLDER}/$name" "$INCOMING_OTHER_FOLDER/misc" >> $LOGFILE
         fi
     else
-        filebot_command copy "${INCOMING_MEDIA_FOLDER}" &> /tmp/filebot-lastrun.log
+        filebot_command copy "${INCOMING_MEDIA_FOLDER}" &> /tmp/filebot-$hash.log
     fi
 }
 process_torrent_queue (){
@@ -371,7 +371,7 @@ process_torrent_queue (){
                     # ensure the files are already copied and remove the torrent+data from Transmission
                     logger "Removing torrent from list, included data"
                     transmission-remote -t $id -rad >> $LOGFILE 2>&1
-                    ll /tmp/$hash &> /dev/null && rm -f /tmp/$hash
+                    [ -d /tmp/$hash ] && rm -f /tmp/$hash
                 ;;
                 Seeding|Idle)
                     local time_spent=${seeding_time%% seconds)}
@@ -381,7 +381,7 @@ process_torrent_queue (){
                         # ensure the files are already copied and remove the torrent+data from Transmission
                         logger "Removing seeding/idle torrent from list, included data"
                         echo transmission-remote -t $id -rad >> $LOGFILE 2>&1
-                        # ll /tmp/$hash &> /dev/null && rm -f /tmp/$hash
+                        [ -d /tmp/$hash ] && rm -f /tmp/$hash
                     else
                         logger "$time_spent seconds out of $idleTTL: Keep seeding, cabrones!!"
                     fi
