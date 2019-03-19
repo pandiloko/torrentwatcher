@@ -376,7 +376,7 @@ process_torrent_queue (){
                 Seeding|Idle)
                     local time_spent=${seeding_time%% seconds)}
                     time_spent={time_spent##*\(}
-                    if [[ $time_spent >= $idleTTL ]];then
+                    if (( $time_spent >= $idleTTL ));then
                         logger "Archiving torrent with status $state and seeding time $seeding_time"
                         # ensure the files are already copied and remove the torrent+data from Transmission
                         logger "Removing seeding/idle torrent from list, included data"
