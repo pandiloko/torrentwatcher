@@ -315,12 +315,12 @@ add_torrents (){
         done
 
         if [ -e ${WATCH_OTHER_FOLDER}magnet.txt ]; then
-        logger "Processing magnet file"
+	    logger "Processing magnet file"
             (
-            while IFS='' read -r i || [[ -n "$line" ]]; do
-                        transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1 && echo  "$i" "${WATCH_OTHER_FOLDER}magn
-            echo "Text read from file: $line"
-            done < "${WATCH_OTHER_FOLDER}magnet.txt"
+		    while IFS='' read -r i || [[ -n "$line" ]]; do
+                        transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1 && echo  "$i" >> "${WATCH_OTHER_FOLDER}magnet.txt.added"
+			echo "Text read from file: $line"
+		    done < "${WATCH_OTHER_FOLDER}magnet.txt"
             )
             rm -f "${WATCH_OTHER_FOLDER}magnet.txt"
         fi
