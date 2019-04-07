@@ -13,9 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-set -x
-exec > /tmp/tw-debug.log
-exec 2>&1
+#set -x
+#exec > /tmp/tw-debug.log
+#exec 2>&1
 
 mypid=$$
 OPTS=`getopt -o v:h:f:d: --long file:,log:,log-filebot:,watch:,watch-other:,incoming:,incoming-other:,output-movies:,output-tvshows:,cloud:,cloud-other:,filebot-cmd:,cloud-cmd:,daemon:,vpn:,no-vpn,verbose,help,version -n 'parse-options' -- "$@"`
@@ -134,7 +134,7 @@ readconfig(){
 	        esac
 	    done
 	else
-		source $CONFIG_FILE
+		source $tmpfile
     fi
     rm -f $tmpfile
 }
@@ -178,6 +178,9 @@ readopts(){
 check_environment(){
     [ -x "$FILEBOT_CMD" ] || { echo -en "Check the binaries:\n - Filebot: $FILEBOT_CMD \n" && exit 1; }
     [ -x "$CLOUD_CMD" ] || { echo -en "Check the binaries:\n - Cloud: $CLOUD_CMD\n" && exit 1; }
+
+    [ -n $RCLONE_CONFIG ] && export RCLONE_CONFIG=$RCLONE_CONFIG
+    rclone config show
 
     virgin=0
     ls $INCOMPLETE_FOLDER $WATCH_MEDIA_FOLDER $WATCH_OTHER_FOLDER $INCOMING_MEDIA_FOLDER $INCOMING_OTHER_FOLDER $OUTPUT_MOVIES_FOLDER $OUTPUT_TVSHOWS_FOLDER `dirname "$LOGFILE"` `dirname "$LOGFILEBOT"`  &>/dev/null || virgin=1
@@ -241,7 +244,7 @@ killtree() {
 
 finish (){
     logger "Finishing TorrentWatcher. Cleaning up tasks..."
-    srv transmission stop >> $LOGFILE 2>&1
+    srv transmission-daemon stop >> $LOGFILE 2>&1
     rm -rf $PIDFILE
     # TODO: PROCESS KILLING NEEDS TESTING
     ############
@@ -338,14 +341,43 @@ filebot_command(){
 }
 
 process_torrent(){
-    if [ -d "${INCOMING_MEDIA_FOLDER}/$name" ]; then
-        [ -f /tmp/filebot-$hash.log ] || filebot_command copy "${INCOMING_MEDIA_FOLDER}/$name" &> /tmp/filebot-$hash.log
-        if grep  -E 'Failure|java\.io\.IOException' /tmp/filebot-$hash.log &>/dev/null; then 
-                echo rsync -rvhP --size-only "${INCOMING_MEDIA_FOLDER}/$name" "$INCOMING_OTHER_FOLDER/misc" >> $LOGFILE
-        fi
-    else
-        filebot_command copy "${INCOMING_MEDIA_FOLDER}" &> /tmp/filebot-$hash.log
-    fi
+    local ret=1337
+	if [ -d "${INCOMING_MEDIA_FOLDER}/$name" ]; then
+		if [ ! -f /tmp/filebot-$hash.log ]  ;then
+			filebot_command copy "${INCOMING_MEDIA_FOLDER}/$name" &> /tmp/filebot-$hash.log
+			ret=$?
+			#if grep  -E 'Failure\|java\.io\.IOException' /tmp/filebot-$hash.log &>/dev/null; then 
+			#	echo rsync -rvhP --size-only "${INCOMING_MEDIA_FOLDER}/$name" "$INCOMING_OTHER_FOLDER/misc" >> $LOGFILE
+			#fi
+		fi
+	else
+		filebot_command copy "${INCOMING_MEDIA_FOLDER}" &> /tmp/filebot-$hash.log
+		ret=$?
+	fi
+    case $ret in
+		1337)
+			logger "already processed"
+			ret=0 
+			;;
+        4) 
+			logger "file already exists"
+			ret=0 
+			;;
+		100) 
+			logger "no valid file found" 
+			ret=0 
+			;;
+		0) 
+			logger "file found and copied"
+			ret=0 
+			;;
+		*) 
+			rm /tmp/filebot-$hash.log
+			ret=1 
+			;;
+	esac
+#    [ $ret -ne 0 ] && rm /tmp/filebot-$hash.log
+    return $ret
 }
 process_torrent_queue (){
 # Collects torrents with 100% Download and process them depending on State.
@@ -459,18 +491,23 @@ check_vpn(){
 #
 # Alternative and arguably better method with dig is now used
 ###############################################################################
-    myip=`dig +short myip.opendns.com @resolver1.opendns.com`
+    myip=$(
+    	    dig +short -4 -t a @resolver1.opendns.com   myip.opendns.com        2>/dev/null ||\
+	    dig +short -4 -t a @ns1-1.akamaitech.net    whoami.akamai.net       2>/dev/null ||\
+	    dig +short -4 -t a @resolver1.opendns.com   myip.opendns.com        2>/dev/null ||\
+	    dig +short -t txt  @ns1.google.com          o-o.myaddr.l.google.com 2>/dev/null | tr -d '"'
+    )
     # vpn=`mmdblookup --file /opt/GeoIP/GeoLite2-Country.mmdb --ip 80.60.233.195 country iso_code| grep '"'| grep -oP '\s+"\K\w+'`
     vpn=`mmdblookup --file /opt/GeoIP/GeoLite2-Country.mmdb --ip $myip country iso_code| grep '"'| grep -oP '\s+"\K\w+'`
     if [ $vpn == $VPN_OK ]
         then
         logger "Geolocated in Country: $vpn"
-        if srv transmission status | grep -q STOPPED ;then  srv transmission start; fi
-        if [ $VPN_EXT -eq 0 ]; then srv openvpn status ; fi
+        srv transmission-daemon status || srv transmission-daemon start
+    if [ $VPN_EXT -eq 0 ]; then srv openvpn status ;fi
     else
         logger "We are not in VPN!! Country: $vpn"
         logger "Trying to stop transmission..."
-        srv transmission stop >> $LOGFILE 2>&1
+        srv transmission-daemon stop >> $LOGFILE 2>&1
         if [ $VPN_EXT -eq 0 ]; then 
             logger "Restarting VPN..."
             srv openvpn restart
@@ -609,7 +646,7 @@ do
     file_monitor
     sleep 10 # Let some time to finish eventual subsequent uploads
     logger "Downloading torrent files to watched folder"
-    if srv transmission status ; then
+    if srv transmission-daemon status ; then
         process_torrent_queue
         add_torrents
     fi
