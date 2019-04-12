@@ -52,6 +52,8 @@ FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER/{plex}"
 FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDER/{plex}"
 
 CLOUD_CMD=$(type -p rclone)
+#check cloud for files every 5 minutes
+CLOUD_DOWNLOAD_INTERVAL=300
 
 VPN_OK=NL
 VPN_EXT=1
@@ -87,12 +89,12 @@ Options
      --filebot-cmd FILE      filebot executable name with path. Default is trying to find with 'which'
      --vpn COUNTRY-ID        Country where VPN IP should be geolocated. Format: ISO 3166-1 alpha-2 (2 characters)
      --no-vpn                VPN is extern
-     
+
  -f, --file FILE             read configurations from specified file (bash syntax)
  -v, --verbose               increase verbosity
      --version               show version and exit
  -h, --help                  show this help message
- 
+
 
 "
 }
@@ -121,20 +123,20 @@ readconfig(){
     cat $tmpfile
     # Ask only if we are interactive
     if [ ! -z $PS1 ] ; then
-	    while true; do
-	        read -p "Do you want to continue? y / n: " yn
-	        case $yn in
-	            [Yy] )
-	                source $tmpfile
-	                break;;
-	            [Nn] )
-	                echo User cancelled
-	                exit 1;;
-	            * ) echo "Please answer with y or n.";;
-	        esac
-	    done
-	else
-		source $tmpfile
+        while true; do
+            read -p "Do you want to continue? y / n: " yn
+            case $yn in
+                [Yy] )
+                    source $tmpfile
+                    break;;
+                [Nn] )
+                    echo User cancelled
+                    exit 1;;
+                * ) echo "Please answer with y or n.";;
+            esac
+        done
+    else
+        source $tmpfile
     fi
     rm -f $tmpfile
 }
@@ -142,7 +144,7 @@ readconfig(){
 readopts(){
     echo "$OPTS"
     eval set -- "$OPTS"
-    
+
     if [ $? != 0 ] ; then echo "Failed parsing options." >&2 ; exit 1 ; fi
     while true; do
       case "$1" in
@@ -248,14 +250,14 @@ finish (){
     rm -rf $PIDFILE
     # TODO: PROCESS KILLING NEEDS TESTING
     ############
-    /bin/kill -- -0 #kill all child processes
+    /bin/kill -- -$mypid #kill all child processes
     ############
     # PGID=$(ps -o pgid= $PID | grep -o [0-9]*)
     # kill -TERM -"$PGID"  # kill -15
     ############
     # killtree $@
     ############
-    
+
     wait
 }
 
@@ -309,21 +311,23 @@ add_torrents (){
         shopt -u | grep -q nocasematch && local ch_nocasematch=true && shopt -s nocasematch
         transmission-remote -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1
         for i in ${WATCH_MEDIA_FOLDER}*.torrent ; do
+            [ -e "$i" ] || continue
             logger "Adding media torrents: $i"
             transmission-remote -a "$i" -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1 && mv "$i" "$i.added"
         done
         for i in ${WATCH_OTHER_FOLDER}*.torrent ; do
+            [ -e "$i" ] || continue
             logger "Adding other torrents: $i"
             transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1 && mv "$i" "$i.added"
         done
 
         if [ -e ${WATCH_OTHER_FOLDER}magnet.txt ]; then
-	    logger "Processing magnet file"
+        logger "Processing magnet file"
             (
-		    while IFS='' read -r i || [[ -n "$line" ]]; do
+            while IFS='' read -r i || [[ -n "$line" ]]; do
                         transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1 && echo  "$i" >> "${WATCH_OTHER_FOLDER}magnet.txt.added"
-			echo "Text read from file: $line"
-		    done < "${WATCH_OTHER_FOLDER}magnet.txt"
+            echo "Text read from file: $line"
+            done < "${WATCH_OTHER_FOLDER}magnet.txt"
             )
             rm -f "${WATCH_OTHER_FOLDER}magnet.txt"
         fi
@@ -342,40 +346,46 @@ filebot_command(){
 
 process_torrent(){
     local ret=1337
-	if [ -d "${INCOMING_MEDIA_FOLDER}/$name" ]; then
-		if [ ! -f /tmp/filebot-$hash.log ]  ;then
-			filebot_command copy "${INCOMING_MEDIA_FOLDER}/$name" &> /tmp/filebot-$hash.log
-			ret=$?
-			#if grep  -E 'Failure\|java\.io\.IOException' /tmp/filebot-$hash.log &>/dev/null; then 
-			#	echo rsync -rvhP --size-only "${INCOMING_MEDIA_FOLDER}/$name" "$INCOMING_OTHER_FOLDER/misc" >> $LOGFILE
-			#fi
-		fi
-	else
-		filebot_command copy "${INCOMING_MEDIA_FOLDER}" &> /tmp/filebot-$hash.log
-		ret=$?
-	fi
+    if [ -d "${INCOMING_MEDIA_FOLDER}/$name" ]; then
+        if [ ! -f /tmp/filebot-$hash.log ]  ;then
+            filebot_command copy "${INCOMING_MEDIA_FOLDER}/$name" &> /tmp/filebot-$hash.log
+            ret=$?
+            #if grep  -E 'Failure\|java\.io\.IOException' /tmp/filebot-$hash.log &>/dev/null; then
+            #   echo rsync -rvhP --size-only "${INCOMING_MEDIA_FOLDER}/$name" "$INCOMING_OTHER_FOLDER/misc" >> $LOGFILE
+            #fi
+        fi
+    else
+        filebot_command copy "${INCOMING_MEDIA_FOLDER}" &> /tmp/filebot-$hash.log
+        ret=$?
+    fi
+    #0 ... SUCCESS
+    #1 ... COMMAND-LINE ERROR (bad command-line syntax, your bad, couldn't possibly work)
+    #2 ... BAD LICENSE (no license or expired license, causing a failure)
+    #3 ... FAILURE (script crashes due to error, something that could work, but doesn't, maybe due to network issues)
+    #4 ... DIE (script aborts on purpose)
+    #100 ... NOOP (script successfully did nothing)
     case $ret in
-		1337)
-			logger "already processed"
-			ret=0 
-			;;
-        4) 
-			logger "file already exists"
-			ret=0 
-			;;
-		100) 
-			logger "no valid file found" 
-			ret=0 
-			;;
-		0) 
-			logger "file found and copied"
-			ret=0 
-			;;
-		*) 
-			rm /tmp/filebot-$hash.log
-			ret=1 
-			;;
-	esac
+        1337)
+            logger "already processed"
+            ret=0
+            ;;
+        4)
+            logger "file already exists"
+            ret=0
+            ;;
+        100)
+            logger "no valid file found"
+            ret=0
+            ;;
+        0)
+            logger "file found and copied"
+            ret=0
+            ;;
+        *)
+            rm /tmp/filebot-$hash.log
+            ret=1
+            ;;
+    esac
 #    [ $ret -ne 0 ] && rm /tmp/filebot-$hash.log
     return $ret
 }
@@ -436,18 +446,18 @@ srv(){
 # then falls back to systemd
 ###############################################################################
 
-	local ret=""
+    local ret=""
     if [ -f /.dockerenv ]; then
         #We are in container
-        case $2 in 
+        case $2 in
             start|stop|restart|status)
                 sudo supervisorctl $2 $1
                 return $?
                 ;;
             status)
-            	ret=$(sudo supervisoctl $2 $1 | grep -w STOPPED)
-            	{ [[ $ret == "STOPPED" ]] && return 1 ;}|| return 0
-            	;;
+                ret=$(sudo supervisoctl $2 $1 | grep -w STOPPED)
+                { [[ $ret == "STOPPED" ]] && return 1 ;}|| return 0
+                ;;
             *)
                 return 1
                 ;;
@@ -471,15 +481,15 @@ srv(){
                 return $?
                 ;;
             status)
-            	ret=$(sudo systemctl is-active $1)
-            	return $?
-            	;;
+                ret=$(sudo systemctl is-active $1)
+                return $?
+                ;;
             *)
                 return 1
                 ;;
         esac
     fi
-    
+
     logger "We should never reach this point"
     return 1
 }
@@ -492,10 +502,10 @@ check_vpn(){
 # Alternative and arguably better method with dig is now used
 ###############################################################################
     myip=$(
-    	    dig +short -4 -t a @resolver1.opendns.com   myip.opendns.com        2>/dev/null ||\
-	    dig +short -4 -t a @ns1-1.akamaitech.net    whoami.akamai.net       2>/dev/null ||\
-	    dig +short -4 -t a @resolver1.opendns.com   myip.opendns.com        2>/dev/null ||\
-	    dig +short -t txt  @ns1.google.com          o-o.myaddr.l.google.com 2>/dev/null | tr -d '"'
+        dig +short -4 -t a @resolver1.opendns.com   myip.opendns.com        2>/dev/null ||\
+        dig +short -4 -t a @ns1-1.akamaitech.net    whoami.akamai.net       2>/dev/null ||\
+        dig +short -4 -t a @resolver1.opendns.com   myip.opendns.com        2>/dev/null ||\
+        dig +short -t txt  @ns1.google.com          o-o.myaddr.l.google.com 2>/dev/null | tr -d '"'
     )
     # vpn=`mmdblookup --file /opt/GeoIP/GeoLite2-Country.mmdb --ip 80.60.233.195 country iso_code| grep '"'| grep -oP '\s+"\K\w+'`
     vpn=`mmdblookup --file /opt/GeoIP/GeoLite2-Country.mmdb --ip $myip country iso_code| grep '"'| grep -oP '\s+"\K\w+'`
@@ -503,12 +513,12 @@ check_vpn(){
         then
         logger "Geolocated in Country: $vpn"
         srv transmission-daemon status || srv transmission-daemon start
-    if [ $VPN_EXT -eq 0 ]; then srv openvpn status ;fi
+        if [ $VPN_EXT -eq 0 ]; then srv openvpn status ;fi
     else
         logger "We are not in VPN!! Country: $vpn"
         logger "Trying to stop transmission..."
         srv transmission-daemon stop >> $LOGFILE 2>&1
-        if [ $VPN_EXT -eq 0 ]; then 
+        if [ $VPN_EXT -eq 0 ]; then
             logger "Restarting VPN..."
             srv openvpn restart
         fi
@@ -516,18 +526,18 @@ check_vpn(){
 }
 
 cloud_list_parsable_torrents(){
-	#dropbox_downloader
-	#$CLOUD_CMD list "$1" | tr -s " " | cut -d " " -f4-|grep -E "\.torrent$"
-	#rclone
-	$CLOUD_CMD lsf "cloud:$1" | grep torrent$
+    #dropbox_downloader
+    #$CLOUD_CMD list "$1" | tr -s " " | cut -d " " -f4-|grep -E "\.torrent$"
+    #rclone
+    $CLOUD_CMD lsf "cloud:$1" | grep torrent$
 }
 cloud_delete(){
-	$CLOUD_CMD deletefile "cloud:$1"
-	return $?
+    $CLOUD_CMD deletefile "cloud:$1"
+    return $?
 }
 cloud_download(){
-	$CLOUD_CMD copy "cloud:$1" "$2"
-	return $?
+    $CLOUD_CMD copy "cloud:$1" "$2"
+    return $?
 }
 
 cloud_monitor () {
@@ -546,27 +556,27 @@ cloud_monitor () {
         #for pid in $pids; do
         #    wait $pid
         #done
-	
-	# Monitor mode was cool but rclone does not support it
-	# TODO: test if mount is reliable enough
+
+    # Monitor mode was cool but rclone does not support it
+    # TODO: test if mount is reliable enough
         #Download files
         oIFS=$IFS
         IFS=$'\n'
         cd $WATCH_MEDIA_FOLDER
-	for i in $(cloud_list_parsable_torrents $CLOUD_MEDIA_FOLDER); do
-            logger "Processing file: $i"
-            # Download but do not delete if download fails
-            cloud_download "$CLOUD_MEDIA_FOLDER/$i" $PWD >> $LOGFILE 2>&1 && cloud_delete "$CLOUD_MEDIA_FOLDER/$i" >> $LOGFILE 2>&1
+    for i in $(cloud_list_parsable_torrents $CLOUD_MEDIA_FOLDER); do
+        logger "Processing file: $i"
+        # Download but do not delete if download fails
+        cloud_download "$CLOUD_MEDIA_FOLDER/$i" $PWD >> $LOGFILE 2>&1 && cloud_delete "$CLOUD_MEDIA_FOLDER/$i" >> $LOGFILE 2>&1
 
-        done
-        cd $WATCH_OTHER_FOLDER
-	for i in $(cloud_list_parsable_torrents $CLOUD_OTHER_FOLDER); do
-            logger "Processing file: $i"
-            # Download but do not delete if download fails
-            cloud_download "$CLOUD_OTHER_FOLDER/$i" $PWD >> $LOGFILE 2>&1 && cloud_delete "$CLOUD_OTHER_FOLDER/$i" >> $LOGFILE 2>&1
-        done
-        IFS=$oIFS
-	sleep 60
+    done
+    cd $WATCH_OTHER_FOLDER
+    for i in $(cloud_list_parsable_torrents $CLOUD_OTHER_FOLDER); do
+        logger "Processing file: $i"
+        # Download but do not delete if download fails
+        cloud_download "$CLOUD_OTHER_FOLDER/$i" $PWD >> $LOGFILE 2>&1 && cloud_delete "$CLOUD_OTHER_FOLDER/$i" >> $LOGFILE 2>&1
+    done
+    IFS=$oIFS
+    sleep $CLOUD_DOWNLOAD_INTERVAL
     done
 }
 
@@ -574,41 +584,6 @@ file_monitor(){
 # Waits for changes in watch folders
 ###############################################################################
     inotifywait -q -t 120 -e close_write,moved_to,modify $WATCH_MEDIA_FOLDER $WATCH_OTHER_FOLDER
-}
-logtail(){
-# Parameters
-#   - file to be readed or resume reading
-# Just reads a file and saves readed lines in an .offset file.
-# The next time resumes reading after offset
-###############################################################################
-    file=$1
-    offset=1 #Because tail -n +offset begins ON offset line (not after) i. e. tail -n +0 == tail -n +1
-    readed=0
-
-    #file exists, is regular file and is not zero size. Else return
-    ([ -e $file ] && [  -f $file ] && [ -s $file ]) || return 1
-
-    if [ -e $file.offset ] ;then
-        offset=`cat $file.offset`
-    fi
-
-    total_lines=`wc -l < $file`
-    if [ $offset -gt $((total_lines+1)) ]; then
-        rm -f $file.offset
-        offset=1
-    fi
-    #while read -r line;do
-    #    ((readed+=1))
-    #    echo $line
-    #done < <(tail -n +$offset $file)
-    # A for loop to read a file is an antipattern but
-    # we must use it due to a bug in FreeBSD
-    for i in `tail -n +$offset $file`;do
-        ((readed+=1))
-        echo $i
-    done
-    offset=$((offset+readed))
-    echo $offset > $file.offset
 }
 
 ################################
