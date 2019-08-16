@@ -59,7 +59,7 @@ TORRENT_SERVICE=transmission-daemon
 VPN_SERVICE=openvpn-client
 
 VPN_OK=NL
-VPN_EXT=1
+VPN_EXT=0
 
 export PATH="/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/root/bin"
 
