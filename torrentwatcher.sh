@@ -55,6 +55,9 @@ CLOUD_CMD=$(type -p rclone)
 #check cloud for files every 5 minutes
 CLOUD_DOWNLOAD_INTERVAL=300
 
+TORRENT_SERVICE=transmission-daemon
+VPN_SERVICE=openvpn-client
+
 VPN_OK=NL
 VPN_EXT=1
 
@@ -234,6 +237,7 @@ Folders
 #exec > "$logfile" 2>&1 </dev/null
 # tail -fn0 logfile | awk '/pattern/ { print | "command" }'
 
+# killtree - not used. Testing only
 killtree() {
     local _pid=$1
     local _sig=${2:--TERM}
@@ -247,6 +251,7 @@ killtree() {
 finish (){
     logger "Finishing TorrentWatcher. Cleaning up tasks..."
     srv transmission-daemon stop >> $LOGFILE 2>&1
+	srv $VPN_SERVICE stop >> $LOGFILE 2>&1
     rm -rf $PIDFILE
     # TODO: PROCESS KILLING NEEDS TESTING
     ############
@@ -422,7 +427,7 @@ process_torrent_queue (){
                         logger "Archiving torrent with status $state and seeding time $seeding_time"
                         # ensure the files are already copied and remove the torrent+data from Transmission
                         logger "Removing seeding/idle torrent from list, included data"
-                        echo transmission-remote -t $id -rad >> $LOGFILE 2>&1
+                        transmission-remote -t $id -rad >> $LOGFILE 2>&1
                         [ -d /tmp/$hash ] && rm -f /tmp/$hash
                     else
                         logger "$time_spent seconds out of $idleTTL: Keep seeding, cabrones!!"
@@ -513,14 +518,16 @@ check_vpn(){
         then
         logger "Geolocated in Country: $vpn"
         srv transmission-daemon status || srv transmission-daemon start
-        if [ $VPN_EXT -eq 0 ]; then srv openvpn status ;fi
+        if [ $VPN_EXT -eq 0 ]; then
+			srv $VPN_SERVICE status ;
+		fi
     else
         logger "We are not in VPN!! Country: $vpn"
         logger "Trying to stop transmission..."
         srv transmission-daemon stop >> $LOGFILE 2>&1
         if [ $VPN_EXT -eq 0 ]; then
             logger "Restarting VPN..."
-            srv openvpn restart
+            srv $VPN_SERVICE restart
         fi
     fi
 }
