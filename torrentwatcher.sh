@@ -32,28 +32,17 @@ LOGFILE="$__dir/log/torrentwatcher.log"
 LOGFILEBOT="$__dir/log/filebot.log"
 PIDFILE="$__dir/run/torrentwatcher.pid"
 
-INCOMPLETE_FOLDER="$__dir/incomplete/"
-WATCH_MEDIA_FOLDER="$__dir/watch/media/"
-WATCH_OTHER_FOLDER="$__dir/watch/other/"
+INCOMPLETE_FOLDER="$__dir/incomplete"
+WATCH_MEDIA_FOLDER="$__dir/watch/media"
+WATCH_OTHER_FOLDER="$__dir/watch/other"
 
-INCOMING_MEDIA_FOLDER="$__dir/media"
-INCOMING_OTHER_FOLDER="$__dir/other"
-
-#Plex preset creates separate folders
-OUTPUT_MOVIES_FOLDER="$__dir/archive/"
-OUTPUT_TVSHOWS_FOLDER="$__dir/archive/"
-
-CLOUD_MEDIA_FOLDER="/tw/launching-media"
-CLOUD_OTHER_FOLDER="/tw/launching-other"
 
 FILEBOT_CMD=`type -p filebot` || FILEBOT_CMD="/opt/filebot/filebot.sh"
-FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER/{plex}"
-FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER/{plex}"
-FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDER/{plex}"
 
 CLOUD_CMD=$(type -p rclone)
 #check cloud for files every 5 minutes
 CLOUD_DOWNLOAD_INTERVAL=300
+RCLONE_CONFIG=/opt/torrentwatcher/rclone.conf
 
 TORRENT_SERVICE=transmission-daemon
 VPN_SERVICE=openvpn-client
@@ -142,6 +131,75 @@ readconfig(){
         source $tmpfile
     fi
     rm -f $tmpfile
+	env
+	# Complete missing folders
+
+	[ -z "$INCOMING_MEDIA_FOLDER" ] && INCOMING_MEDIA_FOLDER="$__dir/media"
+	[ -z "$INCOMING_OTHER_FOLDER" ] && INCOMING_OTHER_FOLDER="$__dir/other"
+
+	#Plex preset creates separate folders
+	[ -z "$OUTPUT_MOVIES_FOLDER" ] && OUTPUT_MOVIES_FOLDER="$__dir/archive"
+	[ -z "$OUTPUT_TVSHOWS_FOLDER" ] && OUTPUT_TVSHOWS_FOLDER="$__dir/archive"
+	[ -z "$OUTPUT_ANIME_FOLDER" ] && OUTPUT_ANIME_FOLDER="$__dir/archive"
+
+	[ -z "$CLOUD_MEDIA_FOLDER" ] && CLOUD_MEDIA_FOLDER="/tw/launching-media"
+	[ -z "$CLOUD_OTHER_FOLDER" ] && CLOUD_OTHER_FOLDER="/tw/launching-other"
+
+	#Plex preset creates separate folders
+	[ -z "$FILEBOT_MOVIES_FORMAT" ] && FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER/{plex}"
+	[ -z "$FILEBOT_SERIES_FORMAT" ] && FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER/{plex}"
+	[ -z "$FILEBOT_ANIME_FORMAT" ] && FILEBOT_ANIME_FORMAT="$OUTPUT_ANIME_FOLDER/{plex}"
+}
+
+showconfig(){
+	cat <<EOF
+System:
+
+idleTTL=$idleTTL
+LOGFILE=$LOGFILE
+LOGFILEBOT=$LOGFILEBOT
+PIDFILE=$PIDFILE
+INCOMPLETE_FOLDER=$INCOMPLETE_FOLDER
+
+local watched folders:
+WATCH_MEDIA_FOLDER=$WATCH_MEDIA_FOLDER
+WATCH_OTHER_FOLDER=$WATCH_OTHER_FOLDER
+
+CLOUD_CMD=$CLOUD_CMD
+CLOUD_DOWNLOAD_INTERVAL=$CLOUD_DOWNLOAD_INTERVAL
+RCLONE_CONFIG=$RCLONE_CONFIG
+TORRENT_SERVICE=$TORRENT_SERVICE
+VPN_SERVICE=$VPN_SERVICE
+VPN_OK=$VPN_OK
+VPN_EXT=$VPN_EXT
+
+
+Transmission Downloads
+
+INCOMING_MEDIA_FOLDER=$INCOMING_MEDIA_FOLDER
+INCOMING_OTHER_FOLDER=$INCOMING_OTHER_FOLDER
+
+Archive:
+
+OUTPUT_MOVIES_FOLDER=$OUTPUT_MOVIES_FOLDER
+OUTPUT_TVSHOWS_FOLDER=$OUTPUT_TVSHOWS_FOLDER
+OUTPUT_ANIME_FOLDER=$OUTPUT_ANIME_FOLDER
+
+Watched remote folders in cloud provider
+
+CLOUD_MEDIA_FOLDER=$CLOUD_MEDIA_FOLDER
+CLOUD_OTHER_FOLDER=$CLOUD_OTHER_FOLDER
+
+
+Filebot:
+
+FILEBOT_CMD=$FILEBOT_CMD
+FILEBOT_MOVIES_FORMAT=$FILEBOT_MOVIES_FORMAT
+FILEBOT_SERIES_FORMAT=$FILEBOT_SERIES_FORMAT
+FILEBOT_ANIME_FORMAT=$FILEBOT_ANIME_FORMAT
+
+
+EOF
 }
 
 readopts(){
@@ -184,8 +242,8 @@ check_environment(){
     [ -x "$FILEBOT_CMD" ] || { echo -en "Check the binaries:\n - Filebot: $FILEBOT_CMD \n" && exit 1; }
     [ -x "$CLOUD_CMD" ] || { echo -en "Check the binaries:\n - Cloud: $CLOUD_CMD\n" && exit 1; }
 
-    [ -n $RCLONE_CONFIG ] && export RCLONE_CONFIG=$RCLONE_CONFIG
-    rclone config show
+	{ [ -e $RCLONE_CONFIG ] && export RCLONE_CONFIG=$RCLONE_CONFIG ;} || { echo -en "Check the rclone config:\n - RCLONE_CONFIG: $RCLONE_CONFIG\n" && exit 1; }
+    #rclone config show
 
     virgin=0
     ls $INCOMPLETE_FOLDER $WATCH_MEDIA_FOLDER $WATCH_OTHER_FOLDER $INCOMING_MEDIA_FOLDER $INCOMING_OTHER_FOLDER $OUTPUT_MOVIES_FOLDER $OUTPUT_TVSHOWS_FOLDER `dirname "$LOGFILE"` `dirname "$LOGFILEBOT"`  &>/dev/null || virgin=1
@@ -231,6 +289,8 @@ Folders
     # FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER{y} {n} [{rating}]/{n} - {y} - {genres} {group}"
     # FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t} {group}"
     # FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}"
+	echo "Final Configuration Complete:"
+	showconfig
 }
 
 #setsid myscript.sh >/dev/null 2>&1 < /dev/null &
