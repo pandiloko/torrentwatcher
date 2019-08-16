@@ -34,21 +34,16 @@ This is how the data flows:
 
 ## Installation
 There is no installation. Just run it!! ... I'm kidding, of course there is no installation as this is a bash script, but there are some (many) requirements. 
+
 ### Docker
-Docker container is on its way. Pre-alpha version available. Build with:
-
-	docker build . --quiet --rm -t torrentwatcher
-
-Execute with:
-
-	# still in project root
-	docker run --cap-add=NET_ADMIN --device /dev/net/tun -v $PWD/docker:/opt --rm -it torrentwatcher
-	# files will be generated on ./docker
+I'm giving up with this docker-everything nonsense. I mean, it's just a bash script. Granted there are some dependencies, but I can't justify to maintain a docker version. Also, this is intended for Raspis and the like where every inch of performance and disk space counts. The docker files are still there for historical reasons and reference but I will eventually delete them. 
+Also, I found dramatic decrease in the download speed for transmission when using docker and openvpn. I tried some different configs with `--privileged` and `--cap-add` but ended giving up for lack of time. 
 
 ### Requirements
 Install following packages:
  - bash version 4.2+
  - transmission
+ - rclone
  - openvpn
  - geoip
  - openjdk (version 8 at the time of writing)
