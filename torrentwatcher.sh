@@ -114,7 +114,7 @@ readconfig(){
     echo "Readed options from file $tmpfile:"
     cat $tmpfile
     # Ask only if we are interactive
-    if [ ! -z $PS1 ] ; then
+    if [ ! -z "$PS1" ] ; then
         while true; do
             read -p "Do you want to continue? y / n: " yn
             case $yn in
@@ -267,7 +267,7 @@ Folders
  - Cloud remote other: $CLOUD_OTHER_FOLDER
 "
         # Ask only if we are interactive, else just try to create
-        if [ ! -z $PS1 ] ; then
+        if [ ! -z "$PS1" ] ; then
             while true; do
                 read -p "Should I try to create the missing folders? y / n: " yn
                 case $yn in
@@ -375,26 +375,26 @@ extract_info () {
 add_torrents (){
         shopt -u | grep -q nocasematch && local ch_nocasematch=true && shopt -s nocasematch
         transmission-remote -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1
-        for i in ${WATCH_MEDIA_FOLDER}*.torrent ; do
+        for i in ${WATCH_MEDIA_FOLDER}/*.torrent ; do
             [ -e "$i" ] || continue
             logger "Adding media torrents: $i"
             transmission-remote -a "$i" -w "$INCOMING_MEDIA_FOLDER" >> $LOGFILE 2>&1 && mv "$i" "$i.added"
         done
-        for i in ${WATCH_OTHER_FOLDER}*.torrent ; do
+        for i in ${WATCH_OTHER_FOLDER}/*.torrent ; do
             [ -e "$i" ] || continue
             logger "Adding other torrents: $i"
             transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1 && mv "$i" "$i.added"
         done
 
-        if [ -e ${WATCH_OTHER_FOLDER}magnet.txt ]; then
+        if [ -e ${WATCH_OTHER_FOLDER}/magnet.txt ]; then
         logger "Processing magnet file"
             (
             while IFS='' read -r i || [[ -n "$line" ]]; do
-                        transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1 && echo  "$i" >> "${WATCH_OTHER_FOLDER}magnet.txt.added"
+                        transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1 && echo  "$i" >> "${WATCH_OTHER_FOLDER}/magnet.txt.added"
             echo "Text read from file: $line"
-            done < "${WATCH_OTHER_FOLDER}magnet.txt"
+            done < "${WATCH_OTHER_FOLDER}/magnet.txt"
             )
-            rm -f "${WATCH_OTHER_FOLDER}magnet.txt"
+            rm -f "${WATCH_OTHER_FOLDERa}/magnet.txt"
         fi
 
         [ $ch_nocasematch ] && shopt -u nocasematch; unset ch_nocasematch
@@ -695,3 +695,4 @@ do
     logger "Checking VPN"
     check_vpn
 done
+
