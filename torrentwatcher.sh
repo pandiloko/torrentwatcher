@@ -405,7 +405,7 @@ filebot_command(){
 #     $2-> src folder
 # Determines if file is alone or in a folder because we don't want to process the whole folder
 ###############################################################################
-    $FILEBOT_CMD -script fn:amc -non-strict --def movieFormat="$FILEBOT_MOVIES_FORMAT" seriesFormat="$FILEBOT_SERIES_FORMAT" animeFormat="$FILEBOT_ANIME_FORMAT" music=n excludeList=$__dir/log/amc-exclude.txt subtitles=en --log-file $__dir/log/amc.log --conflict auto  --log all --action $1 "$2" >> $LOGFILE 2>&1
+    $FILEBOT_CMD -script fn:amc -non-strict --def movieFormat="$FILEBOT_MOVIES_FORMAT" seriesFormat="$FILEBOT_SERIES_FORMAT" animeFormat="$FILEBOT_ANIME_FORMAT" music=n excludeList=$__dir/log/amc-exclude.txt subtitles=en --log-file $__dir/log/amc.log --conflict auto --lang en --log all --action $1 "$2" >> $LOGFILE 2>&1
     return $?
 }
 
@@ -577,10 +577,11 @@ check_vpn(){
     if [ $vpn == $VPN_OK ]
         then
         logger "Geolocated in Country: $vpn"
-        srv transmission-daemon status || srv transmission-daemon start
+        srv transmission-daemon status || { srv transmission-daemon start && sleep 5 ;}
         if [ $VPN_EXT -eq 0 ]; then
 			srv $VPN_SERVICE status ;
 		fi
+		return 
     else
         logger "We are not in VPN!! Country: $vpn"
         logger "Trying to stop transmission..."
