@@ -1,20 +1,35 @@
-version: "3"
+version: "3.5"
 services:
   tw:
     image: tw
+    build: $PWD/docker
     container_name: twtest
+    hostname: twd
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
     environment:
       - UID=99
       - GROUPS=99
-      - RCLONE_CONFIG=/etc/rclone.conf
-      - CUSTOM_USER_ID=99
-      - CUSTOM_GROUP_ID=99
+      - RCLONE_CONFIG=/opt/rclone.conf
+      - CUSTOM_USER_ID=1000
+      - CUSTOM_GROUP_ID=1000
     ports:
-      - "0.0.0.0:9092:9091"
+      - "9091:9091"
 
     volumes:
-      - ./data/:/opt/
-      - /drako/:/drako/
-      - ./tw.conf:/etc/tw.conf
-      - ./rclone.conf:/etc/rclone.conf
-
+      - /etc/localtime:/etc/localtime:ro
+      - /opt/torrentwatcher/app/:/usr/local/bin/
+      - $PWD/data:/home/watcher
+      - $PWD/docker/entrypoint.sh:/entrypoint.sh
+      - $PWD/docker/torrentwatcher.conf:/etc/supervisor/conf.d/torrentwatcher.conf
+      - /stuff/:/stuff/
+        # networks:
+        #   default:
+        #     driver: twnet_drv
+        #      - $PWD/data/vpn:/opt/vpn
+        #      - $PWD/data/log:/opt/log
+        #      - $PWD/data/.bashrc:/opt/.bashrc
+        #      - $PWD/data/.bash_history:/opt/.bash_history
+  

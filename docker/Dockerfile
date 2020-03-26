@@ -1,38 +1,49 @@
 FROM ubuntu:bionic
+
 ##Install packages
 #########################
-#RUN pacman -Syyuw --noconfirm
-#RUN rm /etc/ssl/certs/ca-certificates.crt && pacman -Syyu --noconfirm --quiet 
-
 RUN set -x \
 	&& apt-get update \
 	&& DEBIAN_FRONTEND=noninteractive apt-get upgrade  -y \
 	&& DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends --no-upgrade -y install apt-utils perl-modules \
-        && DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends --no-upgrade -y install vim net-tools bash-completion curl wget inetutils-telnet less
+        && DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends --no-upgrade -y install vim net-tools bash-completion curl wget inetutils-telnet less \
+        && DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends --no-upgrade -y install vim net-tools bash-completion curl wget less bc dnsutils binutils cron file fontconfig git grep gzip inotify-tools jq mediainfo libx264-152 mlocate net-tools sudo supervisor transmission-cli transmission-daemon unrar unzip vim wget libmediainfo0v5 inotify-tools mmdb-bin gnupg openssl ca-certificates openvpn  \
+	&& echo "deb [arch=all] https://get.filebot.net/deb/ universal-jdk8 main" > /etc/apt/sources.list.d/filebot.list \
+	&& curl https://get.filebot.net/filebot/KEYS | apt-key add - \
+	&& apt-get update \
+	&& DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends --no-upgrade -y install filebot \
+	&& DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+	&& DEBIAN_FRONTEND=noninteractive apt-get autoremove -y \
+	&& DEBIAN_FRONTEND=noninteractive apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-RUN set -x \
-        && DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends --no-upgrade -y install vim net-tools bash-completion curl wget less bc dnsutils binutils cron file fontconfig git grep gzip inotify-tools jq mediainfo libx264-152 mlocate net-tools rclone sudo supervisor transmission-cli unrar unzip vim wget libmediainfo0v5 inotify-tools mmdb-bin gnupg openssl ca-certificates  \
-	&& apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
+# Time zone can also be shared with host through volumes 
 RUN ln -sf /usr/share/zoneinfo/Europe/Berlin /etc/localtime
 
-#RUN curl -k "https://api.github.com/repos/maxmind/geoipupdate/releases/latest" 
+# Maxmind now needs you to create a free account and generate a token.
+# I'm looking for alternatives but for now a token must be manually created
 RUN set -x \
 	&& wget $( curl -kfs "https://api.github.com/repos/maxmind/geoipupdate/releases/latest" |  jq -r '.assets[].browser_download_url' | grep amd64.deb ) \
         && dpkg -i geoipupdate*linux_amd64.deb && rm geoipupdate*linux_amd64.deb
         # && mv geoipupdate* GeoIP && echo "DatabaseDirectory /opt/GeoIP" >> GeoIP/GeoIP.conf \
 	# && (crontab -l 2>/dev/null && echo "@daily /opt/GeoIP/geoipupdate -f /opt/GeoIP/GeoIP.conf" )|crontab -
 
-
+# Do not run random scripts directly from Internet!!
 RUN set -x \
-	&& echo "deb [arch=all] https://get.filebot.net/deb/ universal-jdk8 main" > /etc/apt/sources.list.d/filebot.list \
-	&& curl https://get.filebot.net/filebot/KEYS | apt-key add - \
-	&& apt-get update \
-	&& DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends --no-upgrade -y install filebot \
-	&& apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* 
+	&& curl https://rclone.org/install.sh | bash
 
+# Create app user
 RUN set -x \
-	&& rmdir /opt && useradd watcher -Umd /opt -s /bin/bash && sudo sh -c "echo \"watcher ALL=(ALL) NOPASSWD:ALL\" >> /etc/sudoers"
+	&& useradd watcher -Umd /home/watcher -s /bin/bash && sudo sh -c "echo \"watcher ALL=(ALL) NOPASSWD:ALL\" >> /etc/sudoers"
+
+# transmission web control custom Web interface
+RUN set -x \
+	&& mkdir -p /opt/transmission-ui/transmission-web-control \
+	&& curl -sL `curl -s https://api.github.com/repos/ronggang/transmission-web-control/releases/latest | jq --raw-output '.tarball_url'` | tar -C /opt/transmission-ui/transmission-web-control/ --strip-components=2 -xz \
+	&& ln -s /usr/share/transmission/web/style /opt/transmission-ui/transmission-web-control \
+	&& ln -s /usr/share/transmission/web/images /opt/transmission-ui/transmission-web-control \
+	&& ln -s /usr/share/transmission/web/javascript /opt/transmission-ui/transmission-web-control \
+	&& ln -s /usr/share/transmission/web/index.html /opt/transmission-ui/transmission-web-control/index.original.html 
 
 ##Network
 #########################
@@ -59,7 +70,7 @@ USER watcher
 # 	yaourt -S --noconfirm filebot47 &&\
 # 	sudo pacman -Scc --noconfirm && yaourt -Scc --noconfirm  && rm -rf /tmp/*
 # 
-# WORKDIR /opt/
+WORKDIR /home/watcher
 # RUN git clone https://github.com/pandiloko/torrentwatcher.git &&\
 #     cd /opt/torrentwatcher && git checkout coldblooded && cd - &&\
 #     sudo ln -s /opt/torrentwatcher/geoipupdate.sh /usr/local/bin/geoipupdate.sh &&\
@@ -68,10 +79,11 @@ USER watcher
 #     mv geoipupdate* GeoIP && echo "DatabaseDirectory /opt/GeoIP" >> GeoIP/GeoIP.conf
 # 
 # RUN sudo ln -s /opt/torrentwatcher/torrentwatcher.ini /etc/supervisor.d/torrent.ini &&\
+#      sudo chown -R watcher:watcher /opt/ && \
+#      wget static.pandiloko.com/bashrc -O ~/.bashrc
+     #mkdir -p /opt/torrentwatcher/log/
+# RUN sudo ln -s /opt/torrentwatcher/torrentwatcher.ini /etc/supervisor.d/torrent.ini &&\
 #     /opt/GeoIP/geoipupdate -f /opt/GeoIP/GeoIP.conf &&\
-#     wget static.pandiloko.com/bashrc -O ~/.bashrc && \
-#     sudo chown -R watcher:watcher /opt/ && \
-#     mkdir -p /opt/torrentwatcher/log/  && \
 #     TZ=${TZ_HOST:-"/usr/share/zoneinfo/Europe/Berlin"} && \
 #     sudo updatedb
 # 
@@ -82,4 +94,4 @@ USER watcher
 # 
 # # Save a copy of everything in /tmp
 # RUN sudo mv /opt/ /tmp/opt
-CMD ["sudo" , "supervisord", "-c", "/etc/supervisord.conf"]
+CMD ["sudo" , "supervisord", "-nc", "/etc/supervisor/supervisord.conf"]

@@ -28,24 +28,33 @@ __root="$(cd "$(dirname "${__dir}")" && pwd)"
 #seconds to delete an idle torrent (259200 seconds = 3 days)
 idleTTL=259200
 
-LOGFILE="$__dir/log/torrentwatcher.log"
-LOGFILEBOT="$__dir/log/filebot.log"
-PIDFILE="$__dir/run/torrentwatcher.pid"
+if [ -f /.dockerenv ]; then
+	ROOT_FOLDER="/home/watcher"
+else
+	ROOT_FOLDER="/opt/torrentwatcher"
+fi
 
-INCOMPLETE_FOLDER="$__dir/incomplete"
-WATCH_MEDIA_FOLDER="$__dir/watch/media"
-WATCH_OTHER_FOLDER="$__dir/watch/other"
+LOGFILE="$ROOT_FOLDER/log/torrentwatcher.log"
+LOGFILEBOT="$ROOT_FOLDER/log/filebot.log"
+PIDFILE="$ROOT_FOLDER/run/torrentwatcher.pid"
+
+INCOMPLETE_FOLDER="$ROOT_FOLDER/incomplete"
+WATCH_MEDIA_FOLDER="$ROOT_FOLDER/watch/media"
+WATCH_OTHER_FOLDER="$ROOT_FOLDER/watch/other"
 
 
-FILEBOT_CMD=`type -p filebot` || FILEBOT_CMD="/opt/filebot/filebot.sh"
+FILEBOT_CMD=`type -p filebot` || FILEBOT_CMD="$ROOT_FOLDER/filebot/filebot.sh"
 
 CLOUD_CMD=$(type -p rclone)
 #check cloud for files every 5 minutes
-CLOUD_DOWNLOAD_INTERVAL=300
-RCLONE_CONFIG=/opt/torrentwatcher/rclone.conf
+CLOUD_DOWNLOAD_INTERVAL=30
+RCLONE_CONFIG="$ROOT_FOLDER/rclone.conf"
+
+GEOIP_DB=$ROOT_FOLDER/geoip/GeoLite2-Country.mmdb
+GEOIP_CONF=$ROOT_FOLDER/geoip/GeoIP.conf
 
 TORRENT_SERVICE=transmission-daemon
-VPN_SERVICE=openvpn-client
+VPN_SERVICE=openvpn
 
 VPN_OK=NL
 VPN_EXT=0
@@ -131,24 +140,6 @@ readconfig(){
         source $tmpfile
     fi
     rm -f $tmpfile
-	env
-	# Complete missing folders
-
-	[ -z "$INCOMING_MEDIA_FOLDER" ] && INCOMING_MEDIA_FOLDER="$__dir/media"
-	[ -z "$INCOMING_OTHER_FOLDER" ] && INCOMING_OTHER_FOLDER="$__dir/other"
-
-	#Plex preset creates separate folders
-	[ -z "$OUTPUT_MOVIES_FOLDER" ] && OUTPUT_MOVIES_FOLDER="$__dir/archive"
-	[ -z "$OUTPUT_TVSHOWS_FOLDER" ] && OUTPUT_TVSHOWS_FOLDER="$__dir/archive"
-	[ -z "$OUTPUT_ANIME_FOLDER" ] && OUTPUT_ANIME_FOLDER="$__dir/archive"
-
-	[ -z "$CLOUD_MEDIA_FOLDER" ] && CLOUD_MEDIA_FOLDER="/tw/launching-media"
-	[ -z "$CLOUD_OTHER_FOLDER" ] && CLOUD_OTHER_FOLDER="/tw/launching-other"
-
-	#Plex preset creates separate folders
-	[ -z "$FILEBOT_MOVIES_FORMAT" ] && FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER/{plex}"
-	[ -z "$FILEBOT_SERIES_FORMAT" ] && FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER/{plex}"
-	[ -z "$FILEBOT_ANIME_FORMAT" ] && FILEBOT_ANIME_FORMAT="$OUTPUT_ANIME_FOLDER/{plex}"
 }
 
 showconfig(){
@@ -241,10 +232,27 @@ readopts(){
 check_environment(){
     [ -x "$FILEBOT_CMD" ] || { echo -en "Check the binaries:\n - Filebot: $FILEBOT_CMD \n" && exit 1; }
     [ -x "$CLOUD_CMD" ] || { echo -en "Check the binaries:\n - Cloud: $CLOUD_CMD\n" && exit 1; }
+    env
+    # Complete missing folders
 
-	{ [ -e $RCLONE_CONFIG ] && export RCLONE_CONFIG=$RCLONE_CONFIG ;} || { echo -en "Check the rclone config:\n - RCLONE_CONFIG: $RCLONE_CONFIG\n" && exit 1; }
+    [ -z "$INCOMING_MEDIA_FOLDER" ] && INCOMING_MEDIA_FOLDER="$ROOT_FOLDER/media"
+    [ -z "$INCOMING_OTHER_FOLDER" ] && INCOMING_OTHER_FOLDER="$ROOT_FOLDER/other"
+
+    #Plex preset creates separate folders
+    [ -z "$OUTPUT_MOVIES_FOLDER" ] && OUTPUT_MOVIES_FOLDER="$ROOT_FOLDER/archive"
+    [ -z "$OUTPUT_TVSHOWS_FOLDER" ] && OUTPUT_TVSHOWS_FOLDER="$ROOT_FOLDER/archive"
+    [ -z "$OUTPUT_ANIME_FOLDER" ] && OUTPUT_ANIME_FOLDER="$ROOT_FOLDER/archive"
+
+    [ -z "$CLOUD_MEDIA_FOLDER" ] && CLOUD_MEDIA_FOLDER="/tw/launching-media"
+    [ -z "$CLOUD_OTHER_FOLDER" ] && CLOUD_OTHER_FOLDER="/tw/launching-other"
+
+    #Plex preset creates separate folders
+    [ -z "$FILEBOT_MOVIES_FORMAT" ] && FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER/{plex}"
+    [ -z "$FILEBOT_SERIES_FORMAT" ] && FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER/{plex}"
+    [ -z "$FILEBOT_ANIME_FORMAT" ] && FILEBOT_ANIME_FORMAT="$OUTPUT_ANIME_FOLDER/{plex}"
+
     #rclone config show
-
+    { [ -e $RCLONE_CONFIG ] && export RCLONE_CONFIG=$RCLONE_CONFIG ;} || { echo -en "Check the rclone config:\n - RCLONE_CONFIG: $RCLONE_CONFIG\n" && exit 1; }
     virgin=0
     ls $INCOMPLETE_FOLDER $WATCH_MEDIA_FOLDER $WATCH_OTHER_FOLDER $INCOMING_MEDIA_FOLDER $INCOMING_OTHER_FOLDER $OUTPUT_MOVIES_FOLDER $OUTPUT_TVSHOWS_FOLDER `dirname "$LOGFILE"` `dirname "$LOGFILEBOT"`  &>/dev/null || virgin=1
 
@@ -335,6 +343,12 @@ trim() {
 
 logger (){
     echo "[torrentwatcher] `date +'%Y.%m.%d-%H:%M:%S'` [$mypid] - $1" >> $LOGFILE
+}
+update_geoip (){
+    if [ $(find "$GEOIP_DB" -mmin +300 | wc -l) -gt 0 ]; then
+        geoipupdate -f $GEOIP_CONF
+	touch $GEOIP_DB
+    fi
 }
 
 ###########################################
@@ -573,15 +587,15 @@ check_vpn(){
         dig +short -t txt  @ns1.google.com          o-o.myaddr.l.google.com 2>/dev/null | tr -d '"'
     )
     # vpn=`mmdblookup --file /opt/GeoIP/GeoLite2-Country.mmdb --ip 80.60.233.195 country iso_code| grep '"'| grep -oP '\s+"\K\w+'`
-    vpn=`mmdblookup --file /opt/GeoIP/GeoLite2-Country.mmdb --ip $myip country iso_code| grep '"'| grep -oP '\s+"\K\w+'`
-    if [ $vpn == $VPN_OK ]
+    vpn=`mmdblookup -f $GEOIP_CONF --file $GEOIP_DB --ip $myip country iso_code| grep '"'| grep -oP '\s+"\K\w+'`
+    if [[ "$vpn" == "$VPN_OK" ]]
         then
         logger "Geolocated in Country: $vpn"
-        srv transmission-daemon status || { srv transmission-daemon start && sleep 5 ;}
+        srv transmission-daemon status | grep STARTED || { srv transmission-daemon start && sleep 5 ;}
         if [ $VPN_EXT -eq 0 ]; then
-			srv $VPN_SERVICE status ;
-		fi
-		return 
+		srv $VPN_SERVICE status ;
+	fi
+	return 
     else
         logger "We are not in VPN!! Country: $vpn"
         logger "Trying to stop transmission..."
@@ -686,6 +700,7 @@ cloud_monitor &
 logger "Entering loop..."
 while true
 do
+    update_geoip
     file_monitor
     sleep 10 # Let some time to finish eventual subsequent uploads
     logger "Downloading torrent files to watched folder"
