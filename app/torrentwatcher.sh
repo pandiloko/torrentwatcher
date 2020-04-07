@@ -117,7 +117,7 @@ readconfig(){
     # -e file exists
     # -f file is a regular file (not a directory or device file)
     # -s file is not zero size
-    ( [ -e $CONFIG_FILE ] && [ -f $CONFIG_FILE ] && [ -s $CONFIG_FILE ] ) || { echo Config file $CONFIG_FILE not found ; exit 1 ;}
+    { [ -e $CONFIG_FILE ] && [ -f $CONFIG_FILE ] && [ -s $CONFIG_FILE ] ;} || { echo Config file $CONFIG_FILE not found ; exit 1 ;}
     local tmpfile=$(mktemp /tmp/torrentwatcher.XXXXXX)
     grep -Ei '^[[:space:]]*[a-z_.-]+=[^[;,`()%$!#]+[[:space:]]*$' $CONFIG_FILE > $tmpfile
     echo "Readed options from file $tmpfile:"
@@ -232,9 +232,18 @@ readopts(){
 check_environment(){
     [ -x "$FILEBOT_CMD" ] || { echo -en "Check the binaries:\n - Filebot: $FILEBOT_CMD \n" && exit 1; }
     [ -x "$CLOUD_CMD" ] || { echo -en "Check the binaries:\n - Cloud: $CLOUD_CMD\n" && exit 1; }
-    env
-    # Complete missing folders
 
+    #try to find a default file
+    if [ -z "$CONFIG_FILE" ]; then
+        CONFIG_FILE="$ROOT_FOLDER/tw.conf"
+        if [ -e $CONFIG_FILE ] && [ -f $CONFIG_FILE ] && [ -s $CONFIG_FILE ] ;then
+            echo "Found default config file $CONFIG_FILE"
+            readconfig
+        fi
+    fi
+    env
+
+    # Complete missing folders
     [ -z "$INCOMING_MEDIA_FOLDER" ] && INCOMING_MEDIA_FOLDER="$ROOT_FOLDER/media"
     [ -z "$INCOMING_OTHER_FOLDER" ] && INCOMING_OTHER_FOLDER="$ROOT_FOLDER/other"
 
@@ -297,8 +306,8 @@ Folders
     # FILEBOT_MOVIES_FORMAT="$OUTPUT_MOVIES_FOLDER{y} {n} [{rating}]/{n} - {y} - {genres} {group}"
     # FILEBOT_SERIES_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t} {group}"
     # FILEBOT_ANIME_FORMAT="$OUTPUT_TVSHOWS_FOLDER{n}/Season {s}/{s+'x'}{e.pad(2)} - {t}"
-	echo "Final Configuration Complete:"
-	showconfig
+    echo "Final Configuration Complete:"
+    showconfig
 }
 
 #setsid myscript.sh >/dev/null 2>&1 < /dev/null &
@@ -319,7 +328,7 @@ killtree() {
 finish (){
     logger "Finishing TorrentWatcher. Cleaning up tasks..."
     srv transmission-daemon stop >> $LOGFILE 2>&1
-	srv $VPN_SERVICE stop >> $LOGFILE 2>&1
+    srv $VPN_SERVICE stop >> $LOGFILE 2>&1
     rm -rf $PIDFILE
     # TODO: PROCESS KILLING NEEDS TESTING
     ############
@@ -351,6 +360,11 @@ update_geoip (){
     fi
 }
 
+filebot_license (){
+    #just check if license is written in the usual place, otherwise try to import it
+    [ -f ~/.filebot/license.txt ] || filebot --license $ROOT_FOLDER/FileBot_License_*.psm
+}
+
 ###########################################
 ####### Here begins the real meat##########
 ###########################################
@@ -361,7 +375,7 @@ extract_info () {
 # extract info from torrent and create GLOBAL variables accordingly
 # variable names are lowercased and spaces replaced with underscores
 ###############################################################################
-    [[ `echo $-` =~ .*x.* ]] && set +x && restore=yes #comment/uncomment for a cleaner output when using xtrace option
+    [[ `echo $-` =~ .*x.* ]] && set +x && local restore=yes #comment/uncomment for a cleaner output when using xtrace option
     oIFS=$IFS
     IFS=$'\n'
     for i in `transmission-remote -t $1 -i| grep ":"` ;do
@@ -419,7 +433,7 @@ filebot_command(){
 #     $2-> src folder
 # Determines if file is alone or in a folder because we don't want to process the whole folder
 ###############################################################################
-    $FILEBOT_CMD -script fn:amc -non-strict --def movieFormat="$FILEBOT_MOVIES_FORMAT" seriesFormat="$FILEBOT_SERIES_FORMAT" animeFormat="$FILEBOT_ANIME_FORMAT" music=n excludeList=$__dir/log/amc-exclude.txt subtitles=en --log-file $__dir/log/amc.log --conflict auto --lang en --log all --action $1 "$2" >> $LOGFILE 2>&1
+    $FILEBOT_CMD -script fn:amc -non-strict --def movieFormat="$FILEBOT_MOVIES_FORMAT" seriesFormat="$FILEBOT_SERIES_FORMAT" animeFormat="$FILEBOT_ANIME_FORMAT" music=n excludeList=$ROOT_FOLDER/log/amc-exclude.txt subtitles=en --log-file $ROOT_FOLDER/log/amc.log --conflict auto --lang en --log all --action $1 "$2" >> $LOGFILE 2>&1
     return $?
 }
 
@@ -591,7 +605,7 @@ check_vpn(){
     if [[ "$vpn" == "$VPN_OK" ]]
         then
         logger "Geolocated in Country: $vpn"
-        srv transmission-daemon status | grep STARTED || { srv transmission-daemon start && sleep 5 ;}
+        srv transmission-daemon status | grep RUNNING || { srv transmission-daemon start && sleep 5 ;}
         if [ $VPN_EXT -eq 0 ]; then
 		srv $VPN_SERVICE status ;
 	fi

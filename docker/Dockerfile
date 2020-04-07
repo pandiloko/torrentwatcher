@@ -11,7 +11,7 @@ RUN set -x \
 	&& echo "deb [arch=all] https://get.filebot.net/deb/ universal-jdk8 main" > /etc/apt/sources.list.d/filebot.list \
 	&& curl https://get.filebot.net/filebot/KEYS | apt-key add - \
 	&& apt-get update \
-	&& DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends --no-upgrade -y install filebot \
+	&& DEBIAN_FRONTEND=noninteractive apt-get --install-recommends --no-upgrade -y install filebot \
 	&& DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
 	&& DEBIAN_FRONTEND=noninteractive apt-get autoremove -y \
 	&& DEBIAN_FRONTEND=noninteractive apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
