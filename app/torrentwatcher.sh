@@ -594,12 +594,10 @@ check_vpn(){
 #
 # Alternative and arguably better method with dig is now used
 ###############################################################################
-    myip=$(
-        dig +short -4 -t a @resolver1.opendns.com   myip.opendns.com        2>/dev/null ||\
-        dig +short -4 -t a @ns1-1.akamaitech.net    whoami.akamai.net       2>/dev/null ||\
-        dig +short -4 -t a @resolver1.opendns.com   myip.opendns.com        2>/dev/null ||\
-        dig +short -t txt  @ns1.google.com          o-o.myaddr.l.google.com 2>/dev/null | tr -d '"'
-    )
+    myip=$( dig +short -4 -t a @ns1-1.akamaitech.net    whoami.akamai.net       2>/dev/null ) ||\
+    myip=$( dig +short -4 -t a @resolver1.opendns.com   myip.opendns.com        2>/dev/null ) ||\
+    myip=$( dig +short -t txt  @ns1.google.com          o-o.myaddr.l.google.com 2>/dev/null | tr -d '"' )
+
     # vpn=`mmdblookup --file /opt/GeoIP/GeoLite2-Country.mmdb --ip 80.60.233.195 country iso_code| grep '"'| grep -oP '\s+"\K\w+'`
     vpn=`mmdblookup -f $GEOIP_CONF --file $GEOIP_DB --ip $myip country iso_code| grep '"'| grep -oP '\s+"\K\w+'`
     if [[ "$vpn" == "$VPN_OK" ]]
@@ -714,7 +712,7 @@ cloud_monitor &
 logger "Entering loop..."
 while true
 do
-    update_geoip
+    #update_geoip
     file_monitor
     sleep 10 # Let some time to finish eventual subsequent uploads
     logger "Downloading torrent files to watched folder"

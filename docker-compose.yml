@@ -2,7 +2,7 @@ version: "3.5"
 services:
   tw:
     image: tw
-    build: $PWD/docker
+    build: $PWD/image
     container_name: twtest
     hostname: twd
     cap_add:
@@ -22,8 +22,8 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /opt/torrentwatcher/app/:/usr/local/bin/
       - $PWD/data:/home/watcher
-      - $PWD/docker/entrypoint.sh:/entrypoint.sh
-      - $PWD/docker/torrentwatcher.conf:/etc/supervisor/conf.d/torrentwatcher.conf
+      - $PWD/image/entrypoint.sh:/entrypoint.sh
+      - $PWD/image/torrentwatcher.conf:/etc/supervisor/conf.d/torrentwatcher.conf
       - /stuff/:/stuff/
         # networks:
         #   default:
