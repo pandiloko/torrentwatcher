@@ -433,7 +433,9 @@ filebot_command(){
 #     $2-> src folder
 # Determines if file is alone or in a folder because we don't want to process the whole folder
 ###############################################################################
-    $FILEBOT_CMD -script fn:amc -non-strict --def movieFormat="$FILEBOT_MOVIES_FORMAT" seriesFormat="$FILEBOT_SERIES_FORMAT" animeFormat="$FILEBOT_ANIME_FORMAT" music=n excludeList=$ROOT_FOLDER/log/amc-exclude.txt subtitles=en --log-file $ROOT_FOLDER/log/amc.log --conflict auto --lang en --log all --action $1 "$2" >> $LOGFILE 2>&1
+    #filebot requires a common output directory now. As long as an absolute path is defined with movieFormat, etc. it won't be used
+    # argument is '--output PATH' and PATH must exist and be a directory. We default to $ROOT_FOLDER
+    $FILEBOT_CMD -script fn:amc -non-strict --def movieFormat="$FILEBOT_MOVIES_FORMAT" seriesFormat="$FILEBOT_SERIES_FORMAT" animeFormat="$FILEBOT_ANIME_FORMAT" music=n excludeList=$ROOT_FOLDER/log/amc-exclude.txt subtitles=en --log-file $ROOT_FOLDER/log/amc.log --conflict auto --lang en --log all --output "$ROOT_FOLDER" --action $1 "$2" >> $LOGFILE 2>&1
     return $?
 }
 
@@ -607,7 +609,7 @@ check_vpn(){
         if [ $VPN_EXT -eq 0 ]; then
 		srv $VPN_SERVICE status ;
 	fi
-	return 
+	return 0
     else
         logger "We are not in VPN!! Country: $vpn"
         logger "Trying to stop transmission..."
@@ -616,6 +618,7 @@ check_vpn(){
             logger "Restarting VPN..."
             srv $VPN_SERVICE restart
         fi
+	return 1
     fi
 }
 
@@ -701,7 +704,12 @@ echo $mypid > $PIDFILE
 trap finish EXIT
 
 logger "Starting TorrentWatcher..."
-check_vpn
+# No point in continue if vpn is not up. This should have a "max-tries" setting
+while ! check_vpn; do
+    echo Waiting for the VPN to start...
+    sleep 5
+    continue
+done
 
 process_torrent_queue
 add_torrents

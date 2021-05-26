@@ -12,3 +12,4 @@ $RECYCLE.BIN/
 *.lnk
 .Trash-*
 /data
+/app/log
