@@ -1,4 +1,4 @@
-FROM ubuntu:bionic
+FROM ubuntu:focal
 
 ##Install packages
 #########################
@@ -7,7 +7,7 @@ RUN set -x \
 	&& DEBIAN_FRONTEND=noninteractive apt-get upgrade  -y \
 	&& DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends --no-upgrade -y install apt-utils perl-modules \
         && DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends --no-upgrade -y install vim net-tools bash-completion curl wget inetutils-telnet less \
-        && DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends --no-upgrade -y install vim net-tools bash-completion curl wget less bc dnsutils binutils cron file fontconfig git grep gzip inotify-tools iputils-ping jq mediainfo libx264-152 mlocate net-tools sudo supervisor transmission-cli transmission-daemon unrar unzip vim wget libmediainfo0v5 inotify-tools mmdb-bin gnupg openssl ca-certificates openvpn  \
+        && DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends --no-upgrade -y install vim net-tools bash-completion curl wget less bc dnsutils binutils cron file fontconfig git grep gzip inotify-tools iputils-ping jq mediainfo libx264-155 mlocate net-tools sudo supervisor transmission-cli transmission-daemon unrar unzip vim wget libmediainfo0v5 inotify-tools mmdb-bin gnupg openssl ca-certificates openvpn  \
 	&& echo "deb [arch=all] https://get.filebot.net/deb/ universal-jdk8 main" > /etc/apt/sources.list.d/filebot.list \
 	&& curl https://get.filebot.net/filebot/KEYS | apt-key add - \
 	&& apt-get update \
