@@ -25,8 +25,10 @@ __file="${__dir}/$(basename "${BASH_SOURCE[0]}")"
 __base="$(basename ${__file} .sh)"
 __root="$(cd "$(dirname "${__dir}")" && pwd)"
 
-#seconds to delete an idle torrent (259200 seconds = 3 days)
+# seconds to delete an idle torrent (259200 seconds = 3 days)
 idleTTL=259200
+# max ratio after which we can stop seeding and in the case of media torrents delete and trash data
+RATIO=2
 
 if [ -f /.dockerenv ]; then
     ROOT_FOLDER="/home/watcher"
@@ -45,6 +47,7 @@ WATCH_ANIME_FOLDER="$ROOT_FOLDER/watch/anime"
 WATCH_OTHER_FOLDER="$ROOT_FOLDER/watch/other"
 
 
+FILEBOT_PLEX_TOKEN=""
 FILEBOT_LABEL=""
 FILEBOT_CMD=`type -p filebot` || FILEBOT_CMD="$ROOT_FOLDER/filebot/filebot.sh"
 
@@ -250,7 +253,7 @@ check_environment(){
             readconfig
         fi
     fi
-    ( set -o posix ; set )
+    #( set -o posix ; set )
 
     # Complete missing folders
     [ -z "$INCOMING_MOVIES_FOLDER" ] && INCOMING_MOVIES_FOLDER="$ROOT_FOLDER/movies"
@@ -342,8 +345,8 @@ killtree() {
 
 finish (){
     logger "Finishing TorrentWatcher. Cleaning up tasks..."
-    srv transmission-daemon stop >> $LOGFILE 2>&1
-    srv $VPN_SERVICE stop >> $LOGFILE 2>&1
+    srv transmission-daemon stop |& tee -a $LOGFILE
+    srv $VPN_SERVICE stop |& tee -a $LOGFILE
     rm -rf $PIDFILE
     # TODO: PROCESS KILLING NEEDS TESTING
     ############
@@ -366,7 +369,7 @@ trim() {
 }
 
 logger (){
-    echo "[torrentwatcher] `date +'%Y.%m.%d-%H:%M:%S'` [$mypid] - $1" >> $LOGFILE
+    echo "[torrentwatcher] `date +'%Y.%m.%d-%H:%M:%S'` [$mypid] - $1" | tee -a $LOGFILE
 }
 update_geoip (){
     if [ $(find "$GEOIP_DB" -mmin +300 | wc -l) -gt 0 ]; then
@@ -460,12 +463,27 @@ filebot_command(){
 ###############################################################################
     #filebot requires a common output directory now. As long as an absolute path is defined with movieFormat, etc. it won't be used
     # argument is '--output PATH' and PATH must exist and be a directory. We default to $ROOT_FOLDER
-    $FILEBOT_CMD -script fn:amc -non-strict --def movieDB=TheMovieDB seriesDB=TheMovieDB::TV animeDB=TheMovieDB::TV movieFormat="$FILEBOT_MOVIES_FORMAT" seriesFormat="$FILEBOT_SERIES_FORMAT" animeFormat="$FILEBOT_ANIME_FORMAT" music=n excludeList=$ROOT_FOLDER/log/amc-exclude.txt subtitles=en $FILEBOT_LABEL --log-file $ROOT_FOLDER/log/amc.log --conflict auto --lang en --log all --output "$ROOT_FOLDER" --action $1 "$2" >> $LOGFILE 2>&1
-    return $?
+    Activating '-x' option to record command in hash log
+    set -x
+    $FILEBOT_CMD -script fn:amc -non-strict --def movieDB=TheMovieDB seriesDB=TheMovieDB::TV animeDB=TheMovieDB::TV movieFormat="$FILEBOT_MOVIES_FORMAT" seriesFormat="$FILEBOT_SERIES_FORMAT" animeFormat="$FILEBOT_ANIME_FORMAT" music=n excludeList=$ROOT_FOLDER/log/amc-exclude.txt subtitles=en $FILEBOT_PLEX_TOKEN $FILEBOT_LABEL --log-file $ROOT_FOLDER/log/amc.log --conflict auto --lang en --log all --output "$ROOT_FOLDER" --action $1 "$2" >> $LOGFILE 2>&1
+    local ret=$?
+    set +x
+    return $ret
 }
 
 process_torrent(){
     local ret=1337
+    #Why do we make a copy of exclude list?
+    # If fail bot fails with e.g. server not found (no internet) this function will 
+    # delete the hash file and the next time the torrent will be processed. 
+    # The problem is that filebot writes the files to the exclude list also on error exit codes. 
+    # This is to avoid endless loops. 
+    # to go around this we save the previous exclude file and if the exit code is error
+    # we delete both the hash file and the exclude file
+    # TODO: differentiate between unrecoverable error (file not found, search failed, no permissions)
+    # recoverable errors (internet down)
+    cp $ROOT_FOLDER/log/amc-exclude.txt $ROOT_FOLDER/log/amc-exclude.txt.previous
+
     if [ -d "$location/$name" ];then
         if [ ! -f /tmp/filebot-$hash.log ]  ;then
             filebot_command copy "$location/$name" &> /tmp/filebot-$hash.log
@@ -499,8 +517,17 @@ process_torrent(){
             logger "file found and copied"
             ret=0
             ;;
-        *)
+	3)
+	    logger "recoverable error??"
+	    # TODO parse for "Networ Error"
             rm /tmp/filebot-$hash.log
+            # as explained before we restore the exclude file we saved before the filebot call
+            # because filebot registers the files even when the operation has failed
+            mv $ROOT_FOLDER/log/amc-exclude.txt.previous $ROOT_FOLDER/log/amc-exclude.txt
+            ret=1
+	    ;;
+
+        *)
             ret=1
             ;;
     esac
@@ -522,7 +549,7 @@ process_torrent_queue (){
     do
         # Copy infos into properly named lowercased variables
         extract_info $id
-    ( set -o posix ; set )| sort
+    #( set -o posix ; set )
     [[ "$location" -ef "$INCOMING_ANIME_FOLDER" ]] && FILEBOT_LABEL="ut_label=anime"
     [[ "$location" -ef "$INCOMING_MOVIES_FOLDER" ]] && FILEBOT_LABEL="ut_label=movie"
     [[ "$location" -ef "$INCOMING_TVSHOWS_FOLDER" ]] && FILEBOT_LABEL="ut_label=tv"
@@ -541,14 +568,15 @@ process_torrent_queue (){
                 Seeding|Idle)
                     local time_spent=${seeding_time%% seconds)}
                     time_spent=${time_spent##*\(}
-                    if (( $time_spent >= $idleTTL ));then
-                        logger "Archiving torrent with status $state and seeding time $seeding_time"
+                    if (( $time_spent >= $idleTTL )) || [ ${ratio%\.*} -gt $RATIO ];then
+                        logger "Archiving torrent with status $state, seeding time $seeding_time and ratio $ratio"
                         # ensure the files are already copied and remove the torrent+data from Transmission
                         logger "Removing seeding/idle torrent from list, included data"
                         transmission-remote -t $id -rad >> $LOGFILE 2>&1
                         [ -d /tmp/$hash ] && rm -f /tmp/$hash
                     else
-                        logger "$time_spent seconds out of $idleTTL: Keep seeding, cabrones!!"
+                        logger "Time spent idling: $time_spent seconds out of $idleTTL: Keep seeding, cabrones!!"
+                        logger "Current ratio: $ratio and max. ratio is $RATIO: Keep seeding, cabrones!!"
                     fi
                 ;;
                 *)
@@ -637,9 +665,9 @@ check_vpn(){
         logger "Geolocated in Country: $vpn"
         srv transmission-daemon status | grep RUNNING || { srv transmission-daemon start && sleep 5 ;}
         if [ $VPN_EXT -eq 0 ]; then
-        srv $VPN_SERVICE status ;
-    fi
-    return 0
+            srv $VPN_SERVICE status ;
+        fi
+        return 0
     else
         logger "We are not in VPN!! Country: $vpn"
         logger "Trying to stop transmission..."
@@ -648,7 +676,7 @@ check_vpn(){
             logger "Restarting VPN..."
             srv $VPN_SERVICE restart
         fi
-    return 1
+        return 1
     fi
 }
 
@@ -742,7 +770,7 @@ trap finish EXIT
 logger "Starting TorrentWatcher..."
 # No point in continue if vpn is not up. This should have a "max-tries" setting
 while ! check_vpn; do
-    echo Waiting for the VPN to start...
+    logger "Waiting for the VPN to start..."
     sleep 5
     continue
 done
@@ -753,8 +781,7 @@ add_torrents
 cloud_monitor &
 
 logger "Entering loop..."
-while true
-do
+while true; do
     #update_geoip
     file_monitor
     sleep 10 # Let some time to finish eventual subsequent uploads
