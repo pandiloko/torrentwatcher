@@ -18,6 +18,8 @@
 #exec 2>&1
 
 mypid=$$
+CLOUD_MONITOR_PID=""
+_tw_finish_done=""
 OPTS=`getopt -o v:h:f:d: --long file:,log:,log-filebot:,watch:,watch-other:,incoming:,incoming-other:,output-movies:,output-tvshows:,cloud:,cloud-other:,filebot-cmd:,cloud-cmd:,daemon:,vpn:,no-vpn,verbose,help,version -n 'parse-options' -- "$@"`
 
 __dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -179,6 +181,7 @@ INCOMING_MOVIES_FOLDER=$INCOMING_MOVIES_FOLDER
 INCOMING_TVSHOWS_FOLDER=$INCOMING_TVSHOWS_FOLDER
 INCOMING_ANIME_FOLDER=$INCOMING_ANIME_FOLDER
 INCOMING_OTHER_FOLDER=$INCOMING_OTHER_FOLDER
+INCOMING_ROOT_FOLDER=$INCOMING_ROOT_FOLDER
 
 Archive:
 
@@ -260,6 +263,7 @@ check_environment(){
     [ -z "$INCOMING_TVSHOWS_FOLDER" ] && INCOMING_TVSHOWS_FOLDER="$ROOT_FOLDER/tvshows"
     [ -z "$INCOMING_ANIME_FOLDER" ] && INCOMING_ANIME_FOLDER="$ROOT_FOLDER/anime"
     [ -z "$INCOMING_OTHER_FOLDER" ] && INCOMING_OTHER_FOLDER="$ROOT_FOLDER/other"
+    [ -z "$INCOMING_ROOT_FOLDER" ] && INCOMING_ROOT_FOLDER="$ROOT_FOLDER"
 
     #Plex preset creates separate folders
     [ -z "$OUTPUT_MOVIES_FOLDER" ] && OUTPUT_MOVIES_FOLDER="$ROOT_FOLDER/archive"
@@ -279,7 +283,7 @@ check_environment(){
     #rclone config show
     { [ -e $RCLONE_CONFIG ] && export RCLONE_CONFIG=$RCLONE_CONFIG ;} || { echo -en "Check the rclone config:\n - RCLONE_CONFIG: $RCLONE_CONFIG\n" && exit 1; }
     virgin=0
-    ls $INCOMPLETE_FOLDER $WATCH_ANIME_FOLDER $WATCH_MOVIES_FOLDER $WATCH_TVSHOWS_FOLDER $WATCH_OTHER_FOLDER $INCOMING_ANIME_FOLDER $INCOMING_TVSHOWS_FOLDER $INCOMING_MOVIES_FOLDER $INCOMING_OTHER_FOLDER $OUTPUT_TVHOWS_FOLDER $OUTPUT_MOVIES_FOLDER $OUTPUT_TVSHOWS_FOLDER `dirname "$LOGFILE"` `dirname "$LOGFILEBOT"`  &>/dev/null || virgin=1
+    ls $INCOMPLETE_FOLDER $WATCH_ANIME_FOLDER $WATCH_MOVIES_FOLDER $WATCH_TVSHOWS_FOLDER $WATCH_OTHER_FOLDER $INCOMING_ANIME_FOLDER $INCOMING_TVSHOWS_FOLDER $INCOMING_MOVIES_FOLDER $INCOMING_OTHER_FOLDER $OUTPUT_ANIME_FOLDER $OUTPUT_MOVIES_FOLDER $OUTPUT_TVSHOWS_FOLDER `dirname "$LOGFILE"` `dirname "$LOGFILEBOT"`  &>/dev/null || virgin=1
 
     if [ $virgin -eq 1 ];then
         echo "It seems to be your first time or some folders are missing. Take a look at my configuration:"
@@ -343,22 +347,75 @@ killtree() {
     kill -${_sig} ${_pid}
 }
 
+stop_cloud_monitor_and_reap (){
+    if [[ -n "${CLOUD_MONITOR_PID:-}" ]] && kill -0 "$CLOUD_MONITOR_PID" 2>/dev/null; then
+        local pgid my_pgid
+        pgid=$(ps -o pgid= -p "$CLOUD_MONITOR_PID" 2>/dev/null | tr -d ' ')
+        my_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ')
+        if [[ -n "$pgid" && -n "$my_pgid" && "$pgid" != "$my_pgid" ]]; then
+            kill -TERM "-$pgid" 2>/dev/null || true
+        else
+            kill -TERM "$CLOUD_MONITOR_PID" 2>/dev/null || true
+        fi
+        local w=0
+        while kill -0 "$CLOUD_MONITOR_PID" 2>/dev/null && (( w < 45 )); do
+            sleep 1
+            w=$((w + 1))
+        done
+        if kill -0 "$CLOUD_MONITOR_PID" 2>/dev/null; then
+            if [[ -n "$pgid" && -n "$my_pgid" && "$pgid" != "$my_pgid" ]]; then
+                kill -KILL "-$pgid" 2>/dev/null || true
+            else
+                kill -KILL "$CLOUD_MONITOR_PID" 2>/dev/null || true
+            fi
+        fi
+        wait "$CLOUD_MONITOR_PID" 2>/dev/null || true
+    elif [[ -n "${CLOUD_MONITOR_PID:-}" ]]; then
+        wait "$CLOUD_MONITOR_PID" 2>/dev/null || true
+    fi
+    CLOUD_MONITOR_PID=""
+}
+
+stop_remaining_direct_children (){
+    local pid
+    local -a pids to_wait
+    while IFS= read -r pid; do
+        [[ -z "$pid" || "$pid" == "$$" ]] && continue
+        pids+=("$pid")
+    done < <(pgrep -P "$$" 2>/dev/null || true)
+    [[ ${#pids[@]} -eq 0 ]] && return 0
+    for pid in "${pids[@]}"; do
+        kill -TERM "$pid" 2>/dev/null || true
+    done
+    sleep 2
+    to_wait=("${pids[@]}")
+    while IFS= read -r pid; do
+        [[ -z "$pid" || "$pid" == "$$" ]] && continue
+        kill -KILL "$pid" 2>/dev/null || true
+        to_wait+=("$pid")
+    done < <(pgrep -P "$$" 2>/dev/null || true)
+    for pid in "${to_wait[@]}"; do
+        wait "$pid" 2>/dev/null || true
+    done
+}
+
 finish (){
+    [[ -n "${_tw_finish_done:-}" ]] && return
+    _tw_finish_done=1
+
     logger "Finishing TorrentWatcher. Cleaning up tasks..."
+    # Cloud sync first while the tunnel is still up; then torrent stack, VPN, routes.
+    stop_cloud_monitor_and_reap
     srv transmission-daemon stop |& tee -a $LOGFILE
     srv $VPN_SERVICE stop |& tee -a $LOGFILE
-    rm -rf $PIDFILE
-    # TODO: PROCESS KILLING NEEDS TESTING
-    ############
-    /bin/kill -- -$mypid #kill all child processes
-    ############
-    # PGID=$(ps -o pgid= $PID | grep -o [0-9]*)
-    # kill -TERM -"$PGID"  # kill -15
-    ############
-    # killtree $@
-    ############
+    sh -c "echo $$ route -en  ; exec sudo route -en"
+    sh -c "echo $$ del route  ; exec sudo /sbin/route del -net 0.0.0.0 gw $GW"
+    sh -c "echo $$ del route  ; exec sudo /sbin/route add -net 0.0.0.0 gw $GW"
 
-    wait
+    stop_remaining_direct_children
+
+    rm -f "$PIDFILE"
+    wait 2>/dev/null || true
 }
 
 trim() {
@@ -371,11 +428,18 @@ trim() {
 logger (){
     echo "[torrentwatcher] `date +'%Y.%m.%d-%H:%M:%S'` [$mypid] - $1" | tee -a $LOGFILE
 }
+
 update_geoip (){
+    logger "Checking if geoip DB update is necessary"
     if [ $(find "$GEOIP_DB" -mmin +300 | wc -l) -gt 0 ]; then
+        logger "Updating geoip DB"
         geoipupdate -f $GEOIP_CONF
-    touch $GEOIP_DB
+        touch $GEOIP_DB
+    else
+        logger "geoip DB is still recent. No update necessary"
+        logger "Geoip DB file: $(ls -lh $GEOIP_DB)"
     fi
+
 }
 
 filebot_license (){
@@ -420,7 +484,8 @@ extract_info () {
 
 add_torrents (){
         shopt -u | grep -q nocasematch && local ch_nocasematch=true && shopt -s nocasematch
-        transmission-remote -w "$INCOMING_MOVIES_FOLDER" >> $LOGFILE 2>&1
+	# General incoming
+        transmission-remote -w "$INCOMING_ROOT_FOLDER" >> $LOGFILE 2>&1
         for i in ${WATCH_MOVIES_FOLDER}/*.torrent ; do
             [ -e "$i" ] || continue
             logger "Adding media torrents: $i"
@@ -445,16 +510,16 @@ add_torrents (){
         if [ -e ${WATCH_OTHER_FOLDER}/magnet.txt ]; then
         logger "Processing magnet file"
             (
-            while IFS='' read -r i || [[ -n "$line" ]]; do
+            while IFS='' read -r i || [[ -n "$i" ]]; do
                         transmission-remote -a "$i" -w "$INCOMING_OTHER_FOLDER" >> $LOGFILE 2>&1 && echo  "$i" >> "${WATCH_OTHER_FOLDER}/magnet.txt.added"
-            echo "Text read from file: $line"
             done < "${WATCH_OTHER_FOLDER}/magnet.txt"
             )
-            rm -f "${WATCH_OTHER_FOLDERa}/magnet.txt"
+            rm -f "${WATCH_OTHER_FOLDER}/magnet.txt"
         fi
 
         [ $ch_nocasematch ] && shopt -u nocasematch; unset ch_nocasematch
 }
+
 filebot_command(){
 # parameters:
 #     $1-> action [copy|move|link]
@@ -463,9 +528,10 @@ filebot_command(){
 ###############################################################################
     #filebot requires a common output directory now. As long as an absolute path is defined with movieFormat, etc. it won't be used
     # argument is '--output PATH' and PATH must exist and be a directory. We default to $ROOT_FOLDER
-    Activating '-x' option to record command in hash log
+
+    # Activating '-x' option to record command in hash log
     set -x
-    $FILEBOT_CMD -script fn:amc -non-strict --def movieDB=TheMovieDB seriesDB=TheMovieDB::TV animeDB=TheMovieDB::TV movieFormat="$FILEBOT_MOVIES_FORMAT" seriesFormat="$FILEBOT_SERIES_FORMAT" animeFormat="$FILEBOT_ANIME_FORMAT" music=n excludeList=$ROOT_FOLDER/log/amc-exclude.txt subtitles=en $FILEBOT_PLEX_TOKEN $FILEBOT_LABEL --log-file $ROOT_FOLDER/log/amc.log --conflict auto --lang en --log all --output "$ROOT_FOLDER" --action $1 "$2" >> $LOGFILE 2>&1
+    $FILEBOT_CMD -script fn:amc -non-strict --def movieDB=TheMovieDB seriesDB=TheTVDB animeDB=TheTVDB movieFormat="$FILEBOT_MOVIES_FORMAT" seriesFormat="$FILEBOT_SERIES_FORMAT" animeFormat="$FILEBOT_ANIME_FORMAT" music=n excludeList=$ROOT_FOLDER/log/amc-exclude.txt subtitles=en $FILEBOT_PLEX_TOKEN $FILEBOT_LABEL --log-file $ROOT_FOLDER/log/amc.log --conflict auto --lang en --log all --output "$ROOT_FOLDER" --action $1 "$2" >> $LOGFILE 2>&1
     local ret=$?
     set +x
     return $ret
@@ -517,15 +583,15 @@ process_torrent(){
             logger "file found and copied"
             ret=0
             ;;
-	3)
-	    logger "recoverable error??"
-	    # TODO parse for "Networ Error"
+    3)
+        logger "recoverable error??"
+        # TODO parse for "Networ Error"
             rm /tmp/filebot-$hash.log
             # as explained before we restore the exclude file we saved before the filebot call
             # because filebot registers the files even when the operation has failed
             mv $ROOT_FOLDER/log/amc-exclude.txt.previous $ROOT_FOLDER/log/amc-exclude.txt
             ret=1
-	    ;;
+        ;;
 
         *)
             ret=1
@@ -608,7 +674,7 @@ srv(){
                 return $?
                 ;;
             status)
-                ret=$(sudo supervisoctl $2 $1 | grep -w STOPPED)
+                ret=$(sudo supervisorctl $2 $1 | grep -w STOPPED)
                 { [[ $ret == "STOPPED" ]] && return 1 ;}|| return 0
                 ;;
             *)
@@ -654,9 +720,9 @@ check_vpn(){
 #
 # Alternative and arguably better method with dig is now used
 ###############################################################################
-    myip=$( dig +timeout=1 +short -4 -t a @ns1-1.akamaitech.net    whoami.akamai.net       2>/dev/null ) ||\
-    myip=$( dig +timeout=1 +short -4 -t a @resolver1.opendns.com   myip.opendns.com        2>/dev/null ) ||\
-    myip=$( dig +timeout=1 +short -t txt  @ns1.google.com          o-o.myaddr.l.google.com 2>/dev/null | tr -d '"' )
+    myip=$( dig +timeout=10 +short -4 -t a @ns1-1.akamaitech.net    whoami.akamai.net       2>/dev/null ) ||\
+    myip=$( dig +timeout=10 +short -4 -t a @resolver1.opendns.com   myip.opendns.com        2>/dev/null ) ||\
+    myip=$( dig +timeout=10 +short -t txt  @ns1.google.com          o-o.myaddr.l.google.com 2>/dev/null | tr -d '"' )
 
     # vpn=`mmdblookup --file /opt/GeoIP/GeoLite2-Country.mmdb --ip 80.60.233.195 country iso_code| grep '"'| grep -oP '\s+"\K\w+'`
     vpn=`mmdblookup -f $GEOIP_CONF --file $GEOIP_DB --ip $myip country iso_code| grep '"'| grep -oP '\s+"\K\w+'`
@@ -674,7 +740,14 @@ check_vpn(){
         srv transmission-daemon stop >> $LOGFILE 2>&1
         if [ $VPN_EXT -eq 0 ]; then
             logger "Restarting VPN..."
-            srv $VPN_SERVICE restart
+            srv $VPN_SERVICE stop
+	    sudo route -en
+	    sudo /sbin/route del -net 0.0.0.0 gw $GW
+	    sudo /sbin/route add -net 0.0.0.0 gw $GW
+            srv $VPN_SERVICE start
+
+	    #TODO: only sleep if connection 
+	    sleep 5
         fi
         return 1
     fi
@@ -684,7 +757,7 @@ cloud_list_parsable_torrents(){
     #dropbox_downloader
     #$CLOUD_CMD list "$1" | tr -s " " | cut -d " " -f4-|grep -E "\.torrent$"
     #rclone
-    $CLOUD_CMD lsf "cloud:$1" | grep torrent$
+    $CLOUD_CMD lsf "cloud:$1" | grep 'torrent$\|magnet.txt$'
 }
 cloud_delete(){
     $CLOUD_CMD deletefile "cloud:$1"
@@ -754,9 +827,10 @@ file_monitor(){
 readopts
 check_environment
 
-if ls $PIDFILE &>/dev/null; then
-    if ps aux | grep `cat $PIDFILE` &>/dev/null ;then
-        logger "TorrenWatcher is already running (`cat $PIDFILE`)"
+if [[ -f "$PIDFILE" ]]; then
+    oldpid=$(tr -d ' \n' <"$PIDFILE" 2>/dev/null) || oldpid=""
+    if [[ -n "$oldpid" ]] && ps -p "$oldpid" -o pid= >/dev/null 2>&1; then
+        logger "TorrenWatcher is already running ($oldpid)"
         exit 0
     fi
     logger "There was a PID file but no corresponding process was running. "
@@ -771,7 +845,7 @@ logger "Starting TorrentWatcher..."
 # No point in continue if vpn is not up. This should have a "max-tries" setting
 while ! check_vpn; do
     logger "Waiting for the VPN to start..."
-    sleep 5
+    sleep 10
     continue
 done
 
@@ -779,10 +853,12 @@ process_torrent_queue
 add_torrents
 #cloud_monitor only needed if there isn't any other cloud monitor service installed and running
 cloud_monitor &
+CLOUD_MONITOR_PID=$!
 
 logger "Entering loop..."
 while true; do
-    #update_geoip
+    logger "Loop restart"
+    update_geoip
     file_monitor
     sleep 10 # Let some time to finish eventual subsequent uploads
     logger "Downloading torrent files to watched folder"
@@ -792,5 +868,6 @@ while true; do
     fi
     logger "Checking VPN"
     check_vpn
+    logger "Loop end"
 done
 
